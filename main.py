@@ -67,7 +67,7 @@ class util(Star):
             payloads = {"user_id": sender_id}
             if group_id:
                 payloads["group_id"] = group_id
-            bot = getattr(event.message_obj, "bot", None)
+            bot = getattr(event, "bot", None)
             if bot is None:
                 text = await self.weighted_random_choice(
                     self.poke_responses[:-1],
