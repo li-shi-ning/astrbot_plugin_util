@@ -1,10 +1,78 @@
+# ====== 核心模块 ======
+from astrbot.core.config import AstrBotConfig
+from astrbot.core.star.filter import HandlerFilter
+from astrbot.core.star.filter.platform_adapter_type import ADAPTER_NAME_2_TYPE
+from astrbot.core.star.register.star_handler import get_handler_or_create
+from astrbot.core.star.star_handler import EventType
 from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import AiocqhttpMessageEvent
-from astrbot.api.event import filter, AstrMessageEvent
-from astrbot.api.message_components import Poke, Plain
-import astrbot.api.message_components as Comp
-from astrbot.api.star import Context, Star, register
+
+# ====== API 模块 ======
 from astrbot.api import logger
+from astrbot.api.event import filter, AstrMessageEvent
+from astrbot.api.star import Context, Star, register
+
+# ====== 第三方库 ======
 import numpy as np
+
+class PackTypeFilter(HandlerFilter):
+    """检查AIOCQHTTP平台的戳一戳事件"""
+    def __init__(self):
+        self.platform_type = filter.PlatformAdapterType.AIOCQHTTP
+
+    def filter(self, event: AstrMessageEvent, cfg: AstrBotConfig) -> bool:
+        adapter_name = event.get_platform_name()
+        if adapter_name not in ADAPTER_NAME_2_TYPE or self.platform_type is None:
+            return False
+        platform_match = bool(ADAPTER_NAME_2_TYPE[adapter_name] & self.platform_type)
+        if not platform_match:
+            return False
+        raw_message = getattr(event.message_obj, "raw_message", None)
+        if not isinstance(raw_message, dict):
+            return False
+        return raw_message.get('sub_type') == 'poke'
+
+class StrictPokeFilter(HandlerFilter):
+    """严格检查AIOCQHTTP平台的戳一戳事件"""
+
+    def __init__(self):
+        self.platform_type = filter.PlatformAdapterType.AIOCQHTTP
+
+    def filter(self, event: AstrMessageEvent, cfg: AstrBotConfig) -> bool:
+        adapter_name = event.get_platform_name()
+        if adapter_name not in ADAPTER_NAME_2_TYPE:
+            return False
+        platform_match = bool(ADAPTER_NAME_2_TYPE[adapter_name] & self.platform_type)
+        if not platform_match:
+            return False
+        raw_message = getattr(event.message_obj, "raw_message", None)
+        if not isinstance(raw_message, dict):
+            return False
+        return (
+                raw_message.get('post_type') == 'notice' and
+                raw_message.get('notice_type') == 'notify' and
+                raw_message.get('sub_type') == 'poke'
+        )
+
+def register_pack_type():
+    """注册一个 PackTypeFilter"""
+    def decorator(awaitable):
+        handler_md = get_handler_or_create(awaitable, EventType.AdapterMessageEvent)
+        handler_md.event_filters.append(
+            PackTypeFilter(),
+        )
+        return awaitable
+    return decorator
+
+def register_strict_pack_type():
+    """注册一个 StrictPokeFilter"""
+    def decorator(awaitable):
+        handler_md = get_handler_or_create(awaitable, EventType.AdapterMessageEvent)
+        handler_md.event_filters.append(
+            PackTypeFilter(),
+        )
+        return awaitable
+
+    return decorator
 
 @register("util", "lishinig", "私人插件", "1.0.0")
 class util(Star):
@@ -42,16 +110,9 @@ class util(Star):
             10.0,  # 反弹
         ])
 
-    @filter.event_message_type(filter.EventMessageType.ALL)
-    async def getpoke(self, event: AstrMessageEvent):
+    @register_pack_type()
+    async def poke(self, event: AiocqhttpMessageEvent):
         raw_message = getattr(event.message_obj, "raw_message", None)
-        if (
-            not raw_message or
-            raw_message.get('post_type') != 'notice' or
-            raw_message.get('notice_type') != 'notify' or
-            raw_message.get('sub_type') != 'poke'
-        ):
-            return
         bot_id = raw_message.get('self_id', None)
         sender_id = raw_message.get('user_id', None)
         target_id = raw_message.get('target_id', None)
@@ -73,7 +134,7 @@ class util(Star):
                     self.poke_responses[:-1],
                     self.poke_weights[:-1]
                 )
-                logger.info(f"bot不是个人bot,期望发送text:{text}")
+                logger.info(f"bot不是AIOCQHTTP,期望发送text:{text}")
                 yield event.plain_result(text)
             else:
                 await bot.api.call_action('send_poke', **payloads)
