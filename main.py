@@ -160,7 +160,6 @@ class util(Star):
         return elements[idx] if not isinstance(elements, np.ndarray) else elements[idx]
 
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
-    @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE | filter.EventMessageType.PRIVATE_MESSAGE)
     async def replyMessage(self,event: AiocqhttpMessageEvent,):
         message = event.get_messages()[0]
         message_id = getattr(message, "id", None)
@@ -171,7 +170,7 @@ class util(Star):
         bot = getattr(event, "bot", None)
         if bot is None:
             return
-
+        logger.info(f"[util] 接收到:{text},准备处理")
         if "正确" in text:
             emoji_id = self.emotions_mapping["开心"][random.randint(0,len(self.emotions_mapping["开心"]) - 1)]
         elif "摆烂" in text:
@@ -183,4 +182,5 @@ class util(Star):
             "message_id":message_id,
             "emoji_id":emoji_id
         }
+        logger.info(f"[util] 接收到:{text},准备emoji_like,payloads:{payloads}")
         await bot.api.call_action('set_msg_emoji_like', **payloads)
