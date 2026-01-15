@@ -165,10 +165,12 @@ class util(Star):
         message_id = getattr(message, "id", None)
         text = getattr(message, "text", None)
         if not text or not message_id:
+            logger.info(f"[util] text:{text},message_id:{message_id}")
             return
 
         bot = getattr(event, "bot", None)
         if bot is None:
+            logger.info(f"[util] bot is None")
             return
         logger.info(f"[util] 接收到:{text},准备处理")
         if "正确" in text:
