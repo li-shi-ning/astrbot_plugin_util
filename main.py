@@ -159,13 +159,43 @@ class util(Star):
             idx = np.random.choice(len(elements), p=probs)
         return elements[idx] if not isinstance(elements, np.ndarray) else elements[idx]
 
+
+    """
+     [11:09:28] [Plug] [INFO] [astrbot_plugin_util.main:166]: [util] 
+     raw_message:
+     <Event, 
+     {
+     'self_id': 3225095075, 
+     'user_id': 3527679745, 
+     'time': 1768446567, 
+     'message_id': 1680938053, 
+     'message_seq': 1680938053, 
+     'real_id': 1680938053, 
+     'real_seq': '1145', 
+     'message_type': 'group', 
+     'sender': 
+     {
+     'user_id': 3527679745, 
+     'nickname': '四', 
+     'card': '', 
+     'role': 'member'
+     }, 
+     'raw_message': '正确', 
+     'font': 14, 
+     'sub_type': 'normal', 
+     'message': [{'type': 'text', 'data': {'text': '正确'}}], 
+     'message_format': 'array', 
+     'post_type': 'message', 
+     'group_id': 651906887, 
+     'group_name': 'hh(2)'
+     }>
+    """
+
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
     async def replyMessage(self,event: AiocqhttpMessageEvent,):
-        message = event.get_messages()[0]
         raw_message = getattr(event.message_obj, "raw_message", None)
-        logger.info(f"[util] raw_message:{raw_message}")
-        message_id = getattr(message, "id", None)
-        text = getattr(message, "text", None)
+        message_id = raw_message.get('message_id', None)
+        text = raw_message.get('raw_message', None)
         if not text or not message_id:
             logger.info(f"[util] text:{text},message_id:{message_id}")
             return
