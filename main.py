@@ -1,7 +1,6 @@
 # ====== 核心模块 ======
 from astrbot.core.config import AstrBotConfig
 from astrbot.core.star.filter import HandlerFilter
-from astrbot.core.star.filter.platform_adapter_type import ADAPTER_NAME_2_TYPE
 from astrbot.core.star.register.star_handler import get_handler_or_create
 from astrbot.core.star.star_handler import EventType
 from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import AiocqhttpMessageEvent
@@ -13,47 +12,17 @@ from astrbot.api.star import Context, Star, register
 
 # ====== 第三方库 ======
 import numpy as np
+import random
 
 class PackTypeFilter(HandlerFilter):
-    """检查AIOCQHTTP平台的戳一戳事件"""
-    def __init__(self):
-        self.platform_type = filter.PlatformAdapterType.AIOCQHTTP
-
+    """检查戳一戳事件"""
     def filter(self, event: AstrMessageEvent, cfg: AstrBotConfig) -> bool:
-        adapter_name = event.get_platform_name()
-        if adapter_name not in ADAPTER_NAME_2_TYPE or self.platform_type is None:
-            return False
-        platform_match = bool(ADAPTER_NAME_2_TYPE[adapter_name] & self.platform_type)
-        if not platform_match:
-            return False
         raw_message = getattr(event.message_obj, "raw_message", None)
         if not isinstance(raw_message, dict):
             return False
         return raw_message.get('sub_type') == 'poke'
 
-class StrictPokeFilter(HandlerFilter):
-    """严格检查AIOCQHTTP平台的戳一戳事件"""
-
-    def __init__(self):
-        self.platform_type = filter.PlatformAdapterType.AIOCQHTTP
-
-    def filter(self, event: AstrMessageEvent, cfg: AstrBotConfig) -> bool:
-        adapter_name = event.get_platform_name()
-        if adapter_name not in ADAPTER_NAME_2_TYPE:
-            return False
-        platform_match = bool(ADAPTER_NAME_2_TYPE[adapter_name] & self.platform_type)
-        if not platform_match:
-            return False
-        raw_message = getattr(event.message_obj, "raw_message", None)
-        if not isinstance(raw_message, dict):
-            return False
-        return (
-                raw_message.get('post_type') == 'notice' and
-                raw_message.get('notice_type') == 'notify' and
-                raw_message.get('sub_type') == 'poke'
-        )
-
-def register_pack_type():
+def register_pack_type(**kwargs):
     """注册一个 PackTypeFilter"""
     def decorator(awaitable):
         handler_md = get_handler_or_create(awaitable, EventType.AdapterMessageEvent)
@@ -63,15 +32,26 @@ def register_pack_type():
         return awaitable
     return decorator
 
-def register_strict_pack_type():
+class StrictPokeFilter(HandlerFilter):
+    """严格检查AIOCQHTTP平台的戳一戳事件"""
+    def filter(self, event: AstrMessageEvent, cfg: AstrBotConfig) -> bool:
+        raw_message = getattr(event.message_obj, "raw_message", None)
+        if not isinstance(raw_message, dict):
+            return False
+        return (
+                raw_message.get('post_type') == 'notice' and
+                raw_message.get('notice_type') == 'notify' and
+                raw_message.get('sub_type') == 'poke'
+        )
+
+def register_strict_pack_type(**kwargs):
     """注册一个 StrictPokeFilter"""
     def decorator(awaitable):
         handler_md = get_handler_or_create(awaitable, EventType.AdapterMessageEvent)
         handler_md.event_filters.append(
-            PackTypeFilter(),
+            StrictPokeFilter(),
         )
         return awaitable
-
     return decorator
 
 @register("util", "lishinig", "私人插件", "1.0.0")
@@ -110,6 +90,24 @@ class util(Star):
             10.0,  # 反弹
         ])
 
+        self.emotions_mapping = {
+            "开心": [2, 74, 109, 272, 295, 305, 318, 319, 324, 339],
+            "得意": [4, 16, 28, 29, 99, 101, 178, 269, 270, 277, 283, 299, 307, 336, 426],
+            "害羞": [6, 20, 21],
+            "难过": [5, 34, 35, 36, 37, 173, 264, 265, 267, 425],
+            "纠结": [106, 176, 262, 263, 270],
+            "生气": [11, 26, 31, 105],
+            "惊讶": [3, 325],
+            "疑惑": [32, 268],
+            "恳求": [111, 353],
+            "可怕": [1, 286],
+            "尴尬": [100, 306, 342, 344, 347],
+            "无语": [46, 97, 181, 271, 281, 284, 287, 312, 352, 357, 427],
+            "恶心": [19, 59, 323],
+            "无聊": [8, 25, 285, 293]
+        }
+
+    @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
     @register_pack_type()
     async def poke(self, event: AiocqhttpMessageEvent):
         raw_message = getattr(event.message_obj, "raw_message", None)
@@ -160,3 +158,29 @@ class util(Star):
             probs = weights_arr / weights_arr.sum()
             idx = np.random.choice(len(elements), p=probs)
         return elements[idx] if not isinstance(elements, np.ndarray) else elements[idx]
+
+    @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
+    @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE | filter.EventMessageType.PRIVATE_MESSAGE)
+    async def replyMessage(self,event: AiocqhttpMessageEvent,):
+        message = event.get_messages()[0]
+        message_id = getattr(message, "id", None)
+        text = getattr(message, "text", None)
+        if not text or not message_id:
+            return
+
+        bot = getattr(event, "bot", None)
+        if bot is None:
+            return
+
+        if "正确" in text:
+            emoji_id = self.emotions_mapping["开心"][random.randint(0,len(self.emotions_mapping["开心"]) - 1)]
+        elif "摆烂" in text:
+            emoji_id = self.emotions_mapping["无语"][random.randint(0, len(self.emotions_mapping["无语"]) - 1)]
+        else:
+            return
+
+        payloads = {
+            "message_id":message_id,
+            "emoji_id":emoji_id
+        }
+        await bot.api.call_action('set_msg_emoji_like', **payloads)
