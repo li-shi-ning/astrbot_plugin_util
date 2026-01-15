@@ -162,6 +162,8 @@ class util(Star):
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
     async def replyMessage(self,event: AiocqhttpMessageEvent,):
         message = event.get_messages()[0]
+        raw_message = getattr(event.message_obj, "raw_message", None)
+        logger.info(f"[util] raw_message:{raw_message}")
         message_id = getattr(message, "id", None)
         text = getattr(message, "text", None)
         if not text or not message_id:
