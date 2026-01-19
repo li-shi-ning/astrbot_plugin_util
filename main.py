@@ -162,6 +162,7 @@ class util(Star):
 
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
     async def replyMessage(self,event: AiocqhttpMessageEvent):
+        """获取所有消息,进行贴表情"""
         raw_message = getattr(event.message_obj, "raw_message", None)
         message_id = raw_message.get('message_id', None)
         text = raw_message.get('raw_message', None)
@@ -193,7 +194,7 @@ class util(Star):
 
     @lishi.command("ah")
     async def get_all_handler(self, event: AstrMessageEvent):
-        "获取所有处理器的详细信息"
+        """获取所有处理器的详细信息"""
         output_text = []
         event_output_text = []
 
@@ -234,6 +235,7 @@ class util(Star):
 
     @lishi.command("hibmp")
     async def get_handler_by_mp(self, event: AstrMessageEvent, handler_module_path: str):
+        """根据插件路径获取所有插件"""
         if handler_module_path is None:
             yield event.plain_result("找不到")
             return
@@ -250,6 +252,7 @@ class util(Star):
 
     @lishi.command("hibfn")
     async def get_handler_by_fn(self, event: AstrMessageEvent, full_name: str):
+        """根据插件方法完整路径获取所有插件"""
         handler = star_handlers_registry.get_handler_by_full_name(full_name)
         handler_module_path = getattr(handler, "handler_module_path", None)
         if handler_module_path is None:
@@ -266,199 +269,30 @@ class util(Star):
             }
         yield event.plain_result(str(plugin_info))
 
-"""
+    @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
+    @lishi.command("kh")
+    async def get_qq_info(self, event: AstrMessageEvent, qq: str):
+        bot = getattr(event, "bot", None)
+        if bot is None:
+            return
 
-for handler in star_handlers_registry.get_handlers_by_event_type(
-    EventType.AdapterMessageEvent,
-    plugins_name=None,
-):
-    print(handler.handler_full_name)
+        if not self._validate_qq(qq):
+            yield event.plain_result("QQ号格式错误，请使用纯数字")
+            return
 
-@dataclass
-class StarHandlerMetadata(Generic[H]):
-    "描述一个 Star 所注册的某一个 Handler。"
+        payloads = {
+            "user_id": int(qq),
+            "no_cache": True
+        }
+        qq_info = await bot.api.call_action('get_stranger_info', **payloads)
+        logger.info(qq_info)
 
-    event_type: EventType
-    "Handler 的事件类型"
-
-    handler_full_name: str
-    '''格式为 f"{handler.__module__}_{handler.__name__}"'''
-
-    handler_name: str
-    "Handler 的名字，也就是方法名"
-
-    handler_module_path: str
-    "Handler 所在的模块路径。"
-
-    handler: H
-    "Handler 的函数对象，应当是一个异步函数"
-
-    event_filters: list[HandlerFilter]
-    "一个适配器消息事件过滤器，用于描述这个 Handler 能够处理、应该处理的适配器消息事件"
-
-    desc: str = ""
-    "Handler 的描述信息"
-
-    extras_configs: dict = field(default_factory=dict)
-    "插件注册的一些其他的信息, 如 priority 等"
-
-    enabled: bool = True
-
-    def __lt__(self, other: StarHandlerMetadata):
-        "定义小于运算符以支持优先队列"
-        return self.extras_configs.get("priority", 0) < other.extras_configs.get(
-            "priority",
-            0,
-        )
-
-@li.command("ah")
-async def get_all_handler(self, event: AstrMessageEvent):
-    "获取所有处理器的详细信息"
-    output_text = []
-    
-    # 遍历所有消息事件处理器
-    for handler in star_handlers_registry.get_handlers_by_event_type(
-            EventType.AdapterMessageEvent,
-            plugins_name=None,  # None表示获取所有插件，不进行过滤
-    ):
-        # 创建一个字典来存储所有属性
-        handler_info = {}
-        
-        # 1. 事件类型
-        handler_info["event_type"] = getattr(handler, "event_type", None)
-        
-        # 2. 处理器完整名称（格式：模块名_函数名）
-        handler_info["handler_full_name"] = getattr(handler, "handler_full_name", None)
-        
-        # 3. 处理器名称（函数名）
-        handler_info["handler_name"] = getattr(handler, "handler_name", None)
-        
-        # 4. 处理器模块路径
-        handler_info["handler_module_path"] = getattr(handler, "handler_module_path", None)
-        
-        # 5. 处理器描述信息
-        handler_info["desc"] = getattr(handler, "desc", "")
-        
-        # 6. 处理器是否启用
-        handler_info["enabled"] = getattr(handler, "enabled", True)
-        
-        # 7. 额外配置（如优先级等）
-        handler_info["extras_configs"] = getattr(handler, "extras_configs", {})
-        
-        # 8. 事件过滤器列表
-        event_filters = getattr(handler, "event_filters", [])
-        handler_info["event_filters_count"] = len(event_filters)
-        handler_info["event_filters"] = []
-        
-        # 详细记录每个过滤器的信息
-        for i, filter_obj in enumerate(event_filters):
-            filter_info = {
-                "index": i,
-                "type": type(filter_obj).__name__,
-                "module": filter_obj.__class__.__module__,
-                "attributes": {}
-            }
-            
-            # 尝试获取过滤器的一些常见属性
-            for attr_name in dir(filter_obj):
-                if not attr_name.startswith("_"):  # 排除私有属性
-                    try:
-                        attr_value = getattr(filter_obj, attr_name)
-                        # 过滤掉方法、模块等复杂对象，只保留简单类型
-                        if not callable(attr_value) and not isinstance(attr_value, type):
-                            # 简化复杂对象的显示
-                            if hasattr(attr_value, "__name__"):
-                                filter_info["attributes"][attr_name] = f"<{attr_value.__name__}>"
-                            elif hasattr(attr_value, "__class__"):
-                                filter_info["attributes"][attr_name] = f"<{attr_value.__class__.__name__}>"
-                            else:
-                                filter_info["attributes"][attr_name] = str(attr_value)
-                    except:
-                        continue
-            
-            handler_info["event_filters"].append(filter_info)
-        
-        # 9. 获取处理器函数对象的详细信息
-        handler_func = getattr(handler, "handler", None)
-        if handler_func:
-            handler_info["handler_function"] = {
-                "name": handler_func.__name__,
-                "module": handler_func.__module__ if hasattr(handler_func, "__module__") else "unknown",
-                "qualname": handler_func.__qualname__ if hasattr(handler_func, "__qualname__") else "unknown",
-                "is_coroutine": asyncio.iscoroutinefunction(handler_func),
-                "signature": str(inspect.signature(handler_func)) if hasattr(inspect, "signature") else "unknown"
-            }
-        
-        # 10. 根据 extras_configs 获取优先级
-        handler_info["priority"] = handler_info["extras_configs"].get("priority", 0)
-        
-        # 11. 从 star_map 获取插件信息
-        plugin_info = {}
-        if handler_info["handler_module_path"] in star_map:
-            plugin = star_map[handler_info["handler_module_path"]]
-            plugin_info = {
-                "plugin_name": getattr(plugin, "name", "unknown"),
-                "plugin_desc": getattr(plugin, "desc", ""),
-                "plugin_version": getattr(plugin, "version", ""),
-                "plugin_author": getattr(plugin, "author", "")
-            }
-        handler_info["plugin_info"] = plugin_info
-        
-        # 格式化输出
-        output = [
-            "=" * 80,
-            f"处理器: {handler_info['handler_full_name']}",
-            f"状态: {'✅ 启用' if handler_info['enabled'] else '❌ 禁用'}",
-            f"优先级: {handler_info['priority']}",
-            f"事件类型: {handler_info['event_type']}",
-            f"处理器名称: {handler_info['handler_name']}",
-            f"模块路径: {handler_info['handler_module_path']}",
-            f"描述: {handler_info['desc']}",
-        ]
-        
-        # 添加插件信息
-        if plugin_info:
-            output.append(f"插件: {plugin_info['plugin_name']} v{plugin_info['plugin_version']}")
-            output.append(f"插件作者: {plugin_info['plugin_author']}")
-            output.append(f"插件描述: {plugin_info['plugin_desc']}")
-        
-        # 添加处理器函数信息
-        if "handler_function" in handler_info:
-            func_info = handler_info["handler_function"]
-            output.append(f"函数: {func_info['name']}")
-            output.append(f"协程函数: {'是' if func_info['is_coroutine'] else '否'}")
-            output.append(f"签名: {func_info['signature']}")
-        
-        # 添加过滤器信息
-        output.append(f"过滤器数量: {handler_info['event_filters_count']}")
-        for filter_info in handler_info["event_filters"]:
-            output.append(f"  [{filter_info['index']}] {filter_info['type']}")
-            if filter_info["attributes"]:
-                for attr_name, attr_value in filter_info["attributes"].items():
-                    output.append(f"    {attr_name}: {attr_value}")
-        
-        # 添加额外配置
-        if handler_info["extras_configs"]:
-            output.append("额外配置:")
-            for key, value in handler_info["extras_configs"].items():
-                if key != "priority":  # 优先级已单独显示
-                    output.append(f"  {key}: {value}")
-        
-        output_text.append("\n".join(output))
-    
-    # 统计信息
-    total_handlers = len(output_text)
-    output_text.insert(0, f"共找到 {total_handlers} 个处理器")
-    
-    # 发送结果（分页处理，避免消息过长）
-    full_output = "\n\n".join(output_text)
-    
-    # 如果输出太长，分开发送
-    max_length = 2000  # 消息平台限制
-    if len(full_output) > max_length:
-        # 分开发送每个处理器的信息
-        for i, handler_output in enumerate(output_text[1:], 1):  # 跳过统计信息
-            await event.send(f"处理器 {i}/{total_handlers}:\n{handler_output}")
-    else:
-        await event.send(full_output)
-"""
+    def _validate_qq(self, qq):
+        """验证QQ号是否合法（只包含数字）"""
+        if not qq or not isinstance(qq, str):
+            return False
+        # 只允许数字，防止路径遍历攻击
+        if not qq.isdigit():
+            logger.warning(f"检测到非法QQ号格式: {qq}")
+            return False
+        return True
