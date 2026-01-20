@@ -13,6 +13,7 @@ from astrbot.api.star import Context, Star, register
 
 # ====== 第三方库 ======
 import numpy as np
+import json
 import random
 
 class PackTypeFilter(HandlerFilter):
@@ -272,6 +273,7 @@ class util(Star):
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
     @lishi.command("kh")
     async def get_qq_info(self, event: AstrMessageEvent, qq: str):
+        """获取一个陌生qq账号信息"""
         bot = getattr(event, "bot", None)
         if bot is None:
             return
@@ -285,7 +287,32 @@ class util(Star):
             "no_cache": True
         }
         qq_info = await bot.api.call_action('get_stranger_info', **payloads)
-        logger.info(qq_info)
+        nick = qq_info["nick"]
+        yield event.plain_result(f"该用户的名称为:{nick}")
+
+    @lishi.command("ch")
+    async def get_chat_history(self,  event: AstrMessageEvent):
+        """获取当前会话的历史信息"""
+        unified_msg_origin = event.unified_msg_origin
+        conversation_id = await self.context.conversation_manager.get_curr_conversation_id(unified_msg_origin)
+        conv = await self.context.conversation_manager.get_conversation(
+            unified_msg_origin=unified_msg_origin,
+            conversation_id=conversation_id,
+        )
+        if conv:
+            history = json.loads(conv.history) if conv.history else []
+
+            output_text = ""
+            output_text += f"对话标题: {conv.platform_id}\n"
+            output_text += f"对话创建时间: {conv.created_at}\n"
+            output_text += f"对话历史长度: {len(history)}"
+            yield event.plain_result(output_text)
+
+            logger.info(f"对话标题: {conv.platform_id}")
+            logger.info(f"对话创建时间: {conv.created_at}")
+            logger.info(f"history:{json.dumps(history, indent=4, ensure_ascii=False)}")
+        else:
+            print("对话不存在")
 
     def _validate_qq(self, qq):
         """验证QQ号是否合法（只包含数字）"""
