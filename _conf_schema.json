@@ -1,0 +1,14 @@
+{
+  "data_dir": {
+    "description": "数据位置",
+    "type": "string",
+    "default": "./data/plugins/astrbot_plugin_util/data",
+    "hint": "例如：/home/root/img/avatar"
+  },
+  "max_role_doct": {
+    "description": "最大人物文档数",
+    "type": "int",
+    "default": 3,
+    "hint": "例如：3"
+  }
+}

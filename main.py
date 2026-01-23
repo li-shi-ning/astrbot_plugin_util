@@ -1,7 +1,10 @@
 # ====== 核心模块 ======
+import os.path
+
 from astrbot.core.config import AstrBotConfig
 from astrbot.core.star.filter import HandlerFilter
 from astrbot.core.star.register.star_handler import get_handler_or_create
+from astrbot.api.provider import ProviderRequest
 from astrbot.core.star.star_handler import EventType, star_handlers_registry
 from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import AiocqhttpMessageEvent
 from astrbot.core.star.star import star_map
@@ -15,6 +18,9 @@ from astrbot.api.star import Context, Star, register
 import numpy as np
 import json
 import random
+
+# ====== 核心库 ======
+from .core.ChineseEntityExtractor import ChineseEntityExtractor
 
 class PackTypeFilter(HandlerFilter):
     """检查戳一戳事件"""
@@ -58,8 +64,41 @@ def register_strict_pack_type(**kwargs):
 
 @register("util", "lishinig", "私人插件", "1.0.0")
 class util(Star):
-    def __init__(self, context: Context):
+    def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
+
+        self.config = config
+        self.data_dir = self.config.get("data_dir", None)
+        self.max_role_doct = self.config.get("max_role_doct", 3)
+        self.role_file_mapping = {}
+        self.is_debug = False
+        if self.data_dir is None:
+            logger.error("数据加载失败")
+            self.chineseentityextractor = ChineseEntityExtractor(
+                chinese_ratio_threshold = 0.2
+            )
+        else:
+            self.chineseentityextractor = ChineseEntityExtractor(
+                user_dict_path = os.path.join(self.data_dir, "entity_dict.txt"),
+                chinese_ratio_threshold = 0.2
+            )
+            self.role_file_mapping = {
+                "mnsp_hiro": "二阶堂希罗.txt",
+                "mnsp_miria": "佐伯米莉亚.txt",
+                "mnsp_meruru": "冰上梅露露.txt",
+                "mnsp_noa": "城崎诺亚.txt",
+                "mnsp_anan": "夏目安安.txt",
+                "mnsp_maago": "宝生玛格.txt",
+                "mnsp_yuki": "月代雪.txt",
+                "mnsp_ema": "樱羽艾玛.txt",
+                "mnsp_sherii": "橘雪莉.txt",
+                "mnsp_koko": "泽渡可可.txt",
+                "mnsp_arisa": "紫藤亚里沙.txt",
+                "mnsp_reia": "莲见蕾雅.txt",
+                "mnsp_hanna": "远野汉娜.txt",
+                "mnsp_nanoka": "黑部奈叶香.txt"
+            }
+
         self.poke_responses = np.array([
             "请勿随意触碰。作为向导，我建议你保持适当的距离。",
             "（微微后退一步）这种接触并不符合'正确'的社交礼仪。",
@@ -272,7 +311,7 @@ class util(Star):
 
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
     @lishi.command("kh")
-    async def get_qq_info(self, event: AstrMessageEvent, qq: str):
+    async def get_qq_info(self, event: AiocqhttpMessageEvent, qq: str):
         """获取一个陌生qq账号信息"""
         bot = getattr(event, "bot", None)
         if bot is None:
@@ -291,7 +330,7 @@ class util(Star):
         yield event.plain_result(f"该用户的名称为:{nick}")
 
     @lishi.command("ch")
-    async def get_chat_history(self,  event: AstrMessageEvent):
+    async def get_chat_history(self, event: AstrMessageEvent):
         """获取当前会话的历史信息"""
         unified_msg_origin = event.unified_msg_origin
         conversation_id = await self.context.conversation_manager.get_curr_conversation_id(unified_msg_origin)
@@ -310,9 +349,156 @@ class util(Star):
 
             logger.info(f"对话标题: {conv.platform_id}")
             logger.info(f"对话创建时间: {conv.created_at}")
-            logger.info(f"history:{json.dumps(history, indent=4, ensure_ascii=False)}")
+            # logger.info(f"history:{json.dumps(history, indent=4, ensure_ascii=False)}")
         else:
             print("对话不存在")
+
+    @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
+    @lishi.command("chb")
+    async def get_chat_history_by_bot(self, event: AiocqhttpMessageEvent):
+        """通过onebot接口获取聊天历史"""
+        group_id = event.get_group_id()
+        sender_id = event.get_sender_id()
+        is_group = not group_id is None
+        bot = getattr(event, "bot", None)
+        if bot is None:
+            return
+        if is_group:
+            logger.info("[util] 进行get_group_msg_history")
+            """
+            获取群消息历史记录
+            终结点：/get_group_msg_history
+            
+            参数
+            字段	类型	说明
+            message_seq	int64	起始消息序号, 可通过 get_msg 获得
+            group_id	int64	群号
+            
+            响应数据
+            字段	类型	说明
+            messages	Message[]	从起始序号开始的前19条消息
+            """
+            payloads = {
+                "group_id":group_id
+            }
+            output_text = json.dumps(await bot.api.call_action('get_group_msg_history', **payloads), indent=4, ensure_ascii=False)
+            logger.info(output_text)
+            yield event.plain_result("已获取,打印到日志")
+        else:
+            logger.info("[util] 进行get_friend_msg_history")
+            """
+            get_friend_msg_history - 获取私聊历史记录 normal
+            
+            参数
+            字段名	数据类型	默认值	说明
+            user_id	string	-	QQ 号
+            message_seq	string	'0'	起始信息
+            count	number	20	数量
+            reverseOrder	boolean	false	倒序
+            
+            响应数据
+            字段名	数据类型	说明
+            messages	message[]	消息数组,参考 onebot11
+            """
+            payloads = {
+                "user_id": sender_id
+            }
+            output_text = json.dumps(await bot.api.call_action('get_friend_msg_history', **payloads), indent=4, ensure_ascii=False)
+            logger.info(output_text)
+            yield event.plain_result("已获取,打印到日志")
+
+    @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
+    @lishi.command("chbf")
+    async def get_chat_history_by_bot_by_sender_id(self, event: AiocqhttpMessageEvent, sender_id: str):
+        """通过qq号获取消息"""
+        if not self._validate_qq(sender_id):
+            yield event.plain_result("请输入正确的id")
+            return
+        bot = getattr(event, "bot", None)
+        if bot is None:
+            return
+        payloads = {
+            "user_id":sender_id
+        }
+        output_text = json.dumps(await bot.api.call_action('get_friend_msg_history', **payloads), indent=4, ensure_ascii=False)
+        logger.info(output_text)
+        yield event.plain_result("已获取,打印到日志")
+
+    @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
+    @lishi.command("chbg")
+    async def get_chat_history_by_bot_by_group_id(self, event: AiocqhttpMessageEvent, group_id: str):
+        """通过群聊号获取消息"""
+        if not self._validate_qq(group_id):
+            yield event.plain_result("请输入正确的id")
+            return
+        bot = getattr(event, "bot", None)
+        if bot is None:
+            return
+        payloads = {
+            "group_id":group_id
+        }
+        output_text = json.dumps(await bot.api.call_action('get_group_msg_history', **payloads), indent=4, ensure_ascii=False)
+        logger.info(output_text)
+        yield event.plain_result("已获取,打印到日志")
+
+    @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
+    @lishi.command("chbgpn")
+    async def get_chat_history_by_bot_process(self, event: AiocqhttpMessageEvent, group_id: str, count: int):
+        """通过群聊号获取消息并且处"""
+        raw_message = getattr(event.message_obj, "raw_message", None)
+        if not self._validate_qq(group_id):
+            yield event.plain_result("请输入正确的id")
+            return
+        bot = getattr(event, "bot", None)
+        if bot is None:
+            return
+        outpur_text, message_id = await self.get_message(group_id, bot, count)
+        yield event.plain_result(f"{count}条聊天记录已获取")
+        logger.info(f"{count}条聊天记录已获取\n" + "\n---\n".join(outpur_text))
+
+    @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
+    @lishi.command("setd")
+    async def set_debug(self, event: AiocqhttpMessageEvent, set_bool: int):
+        self.is_debug = set_bool == 1
+        yield event.plain_result(f"设置debug:{self.is_debug}")
+
+    @filter.on_llm_request(priority=50)
+    async def add_doct(self, event: AstrMessageEvent, req: ProviderRequest):
+        text = event.message_str
+        entities = self.chineseentityextractor.extract(text)
+        text_tag = []
+        for entitie in entities:
+            if not (entitie["type"] in text_tag):
+                text_tag.append(entitie["type"])
+        text_tag = text_tag[:self.max_role_doct]
+        system_prompt = f'The following are role documents that may be used:\n'
+        for name in text_tag:
+            file_name = self.role_file_mapping.get(name, None)
+            file_path = os.path.join(self.data_dir, file_name)
+            if not file_name is None and os.path.exists(file_path):
+                with open(file_path, "r") as f:
+                    system_prompt += f"{f.read()}\n" + "-" * 10 + "\n"
+        if self.is_debug:
+            logger.info(f"注入提示词:\n{system_prompt}")
+        req.system_prompt += system_prompt
+
+    async def get_message(self, group_id, bot, count):
+        payloads = {
+            "group_id":group_id,
+            "count": count
+        }
+        data = await bot.api.call_action('get_group_msg_history', **payloads)
+        outpur_text = []
+        logger.info(f"[util] 处理:\n{json.dumps(data['messages'], indent=4, ensure_ascii=False)}")
+        for message in data["messages"]:
+            for message_data in message["message"]:
+                if message_data["type"] == "text":
+                    try:
+                        outpur_text.append(message_data["data"]["text"])
+                    except:
+                        pass
+        message_id = data["messages"][0]["message_id"]
+        return outpur_text, message_id
 
     def _validate_qq(self, qq):
         """验证QQ号是否合法（只包含数字）"""
