@@ -10,5 +10,11 @@
     "type": "int",
     "default": 3,
     "hint": "例如：3"
+  },
+  "mahjong_interface_url": {
+    "description": "mahjong游戏接口的url接口(请确保清楚自己在做什么)",
+    "type": "string",
+    "default": "",
+    "hint": "http:/www.mahjong.com"
   }
 }

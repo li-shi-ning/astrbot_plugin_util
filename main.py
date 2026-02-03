@@ -20,6 +20,7 @@ import os
 # ====== 核心库 ======
 from .core.ChineseEntityExtractor import ChineseEntityExtractor
 from .core.Filter import register_pack_type
+from .core.api_client import ApiClient
 
 
 @register("util", "lishinig", "私人插件", "1.0.0")
@@ -32,6 +33,13 @@ class util(Star):
         self.max_role_doct = self.config.get("max_role_doct", 3)
         self.role_file_mapping = {}
         self.is_debug = False
+        self.mahjong_interface_url = config.get("mahjong_interface_url", None)
+        if self.mahjong_interface_url:
+            self.client = ApiClient()
+            logger.info(f"[util] 已使用:{self.mahjong_interface_url},作为麻将接口")
+        else:
+            self.client = None
+            logger.info(f"[util] 未配置麻将接口请使用 /mj seturl [url] 设置")
         if self.data_dir is None:
             self.data_dir = StarTools.get_data_dir()
             self.data_dir_entity = os.path.join(self.data_dir, "entity")
@@ -190,6 +198,226 @@ class util(Star):
             return self.emotions_mapping["无语"][random.randint(0, len(self.emotions_mapping["无语"]) - 1)]
         else:
             return None
+
+    @filter.command_group("mj")
+    async def mj(self):
+        pass
+
+    @mj.command("seturl")
+    async def set_url(self, event: AstrMessageEvent, url: str):
+        """设置麻将接口url"""
+        self.mahjong_interface_url = url
+        if self.client is None:
+            self.client = ApiClient(self.mahjong_interface_url)
+        else:
+            self.client.set_url(self.mahjong_interface_url)
+        yield event.plain_result(f"已经设置mahjong_interface_url为:{self.mahjong_interface_url}")
+        logger.info(f"[util] 已经设置mahjong_interface_url为:{self.mahjong_interface_url}")
+
+    @mj.command("gs")
+    async def get_status(self, event: AstrMessageEvent):
+        """获取游戏详细信息"""
+        if self.client is None:
+            yield event.plain_result(f"未设置mahjong_interface_url")
+            return
+        data = await self.client.get_status()
+        yield event.plain_result(f"游戏详细数据为:{json.dumps(data, indent=4, ensure_ascii=False)}")
+        logger.info(f"[util] 游戏详细数据为:{json.dumps(data, indent=4, ensure_ascii=False)}")
+
+    @mj.command("ggi")
+    async def get_game_info(self, event: AstrMessageEvent):
+        """获取当前游戏信息"""
+        if self.client is None:
+            yield event.plain_result(f"未设置mahjong_interface_url")
+            return
+        data = await self.client.get_game_info()
+        yield event.plain_result(f"当前游戏信息为:{json.dumps(data, indent=4, ensure_ascii=False)}")
+        logger.info(f"[util] 当前游戏信息为:{json.dumps(data, indent=4, ensure_ascii=False)}")
+
+    @mj.command("gag")
+    async def get_ai_guide(self, event: AstrMessageEvent):
+        """获取 AI 指导信息"""
+        if self.client is None:
+            yield event.plain_result(f"未设置mahjong_interface_url")
+            return
+        data = await self.client.get_ai_guide()
+        yield event.plain_result(f"AI指导信息为:{json.dumps(data, indent=4, ensure_ascii=False)}")
+        logger.info(f"[util] AI指导信息为:{json.dumps(data, indent=4, ensure_ascii=False)}")
+
+    @mj.command("sb")
+    async def start_browser(self, event: AstrMessageEvent):
+        """启动浏览器"""
+        if self.client is None:
+            yield event.plain_result(f"未设置mahjong_interface_url")
+            return
+        data = await self.client.start_browser()
+        yield event.plain_result(f"启动浏览器结果: {json.dumps(data, indent=4, ensure_ascii=False)}")
+        logger.info(f"[util] 启动浏览器结果: {json.dumps(data, indent=4, ensure_ascii=False)}")
+
+    @mj.command("eo")
+    async def enable_overlay(self, event: AstrMessageEvent):
+        """启用网页覆盖显示"""
+        if self.client is None:
+            yield event.plain_result(f"未设置mahjong_interface_url")
+            return
+        data = await self.client.enable_overlay()
+        yield event.plain_result(f"启用网页覆盖显示结果: {json.dumps(data, indent=4, ensure_ascii=False)}")
+        logger.info(f"[util] 启用网页覆盖显示结果: {json.dumps(data, indent=4, ensure_ascii=False)}")
+
+    @mj.command("do")
+    async def disable_overlay(self, event: AstrMessageEvent):
+        """禁用网页覆盖显示"""
+        if self.client is None:
+            yield event.plain_result(f"未设置mahjong_interface_url")
+            return
+        data = await self.client.disable_overlay()
+        yield event.plain_result(f"禁用网页覆盖显示结果: {json.dumps(data, indent=4, ensure_ascii=False)}")
+        logger.info(f"[util] 禁用网页覆盖显示结果: {json.dumps(data, indent=4, ensure_ascii=False)}")
+
+    @mj.command("to")
+    async def toggle_overlay(self, event: AstrMessageEvent):
+        """切换网页覆盖显示状态"""
+        if self.client is None:
+            yield event.plain_result(f"未设置mahjong_interface_url")
+            return
+        data = await self.client.toggle_overlay()
+        yield event.plain_result(f"切换网页覆盖显示状态结果: {json.dumps(data, indent=4, ensure_ascii=False)}")
+        logger.info(f"[util] 切换网页覆盖显示状态结果: {json.dumps(data, indent=4, ensure_ascii=False)}")
+
+    @mj.command("ea")
+    async def enable_automation(self, event: AstrMessageEvent):
+        """启用自动打牌"""
+        if self.client is None:
+            yield event.plain_result(f"未设置mahjong_interface_url")
+            return
+        data = await self.client.enable_automation()
+        yield event.plain_result(f"启用自动打牌结果: {json.dumps(data, indent=4, ensure_ascii=False)}")
+        logger.info(f"[util] 启用自动打牌结果: {json.dumps(data, indent=4, ensure_ascii=False)}")
+
+    @mj.command("da")
+    async def disable_automation(self, event: AstrMessageEvent):
+        """禁用自动打牌"""
+        if self.client is None:
+            yield event.plain_result(f"未设置mahjong_interface_url")
+            return
+        data = await self.client.disable_automation()
+        yield event.plain_result(f"禁用自动打牌结果: {json.dumps(data, indent=4, ensure_ascii=False)}")
+        logger.info(f"[util] 禁用自动打牌结果: {json.dumps(data, indent=4, ensure_ascii=False)}")
+
+    @mj.command("ta")
+    async def toggle_automation(self, event: AstrMessageEvent):
+        """切换自动打牌状态"""
+        if self.client is None:
+            yield event.plain_result(f"未设置mahjong_interface_url")
+            return
+        data = await self.client.toggle_automation()
+        yield event.plain_result(f"切换自动打牌状态结果: {json.dumps(data, indent=4, ensure_ascii=False)}")
+        logger.info(f"[util] 切换自动打牌状态结果: {json.dumps(data, indent=4, ensure_ascii=False)}")
+
+    @mj.command("ej")
+    async def enable_autojoin(self, event: AstrMessageEvent):
+        """启用自动加入游戏"""
+        if self.client is None:
+            yield event.plain_result(f"未设置mahjong_interface_url")
+            return
+        data = await self.client.enable_autojoin()
+        yield event.plain_result(f"启用自动加入游戏结果: {json.dumps(data, indent=4, ensure_ascii=False)}")
+        logger.info(f"[util] 启用自动加入游戏结果: {json.dumps(data, indent=4, ensure_ascii=False)}")
+
+    @mj.command("dj")
+    async def disable_autojoin(self, event: AstrMessageEvent):
+        """禁用自动加入游戏"""
+        if self.client is None:
+            yield event.plain_result(f"未设置mahjong_interface_url")
+            return
+        data = await self.client.disable_autojoin()
+        yield event.plain_result(f"禁用自动加入游戏结果: {json.dumps(data, indent=4, ensure_ascii=False)}")
+        logger.info(f"[util] 禁用自动加入游戏结果: {json.dumps(data, indent=4, ensure_ascii=False)}")
+
+    @mj.command("tj")
+    async def toggle_autojoin(self, event: AstrMessageEvent):
+        """切换自动加入游戏状态"""
+        if self.client is None:
+            yield event.plain_result(f"未设置mahjong_interface_url")
+            return
+        data = await self.client.toggle_autojoin()
+        yield event.plain_result(f"切换自动加入游戏状态结果: {json.dumps(data, indent=4, ensure_ascii=False)}")
+        logger.info(f"[util] 切换自动加入游戏状态结果: {json.dumps(data, indent=4, ensure_ascii=False)}")
+
+    @mj.command("gjs")
+    async def get_autojoin_settings(self, event: AstrMessageEvent):
+        """获取自动加入游戏设置"""
+        if self.client is None:
+            yield event.plain_result(f"未设置mahjong_interface_url")
+            return
+        data = await self.client.get_autojoin_settings()
+        yield event.plain_result(f"自动加入游戏设置: {json.dumps(data, indent=4, ensure_ascii=False)}")
+        logger.info(f"[util] 自动加入游戏设置: {json.dumps(data, indent=4, ensure_ascii=False)}")
+
+    @mj.command("sjs")
+    async def set_autojoin_settings(self, event: AstrMessageEvent, level: int, mode: str):
+        """设置自动加入游戏参数
+
+        Args:
+            level: 等级索引 (0-3)
+            mode: 游戏模式 (east, south, fast, ...)
+        """
+        if self.client is None:
+            yield event.plain_result(f"未设置mahjong_interface_url")
+            return
+        data = await self.client.set_autojoin_settings(level, mode)
+        yield event.plain_result(f"设置自动加入游戏参数结果: {json.dumps(data, indent=4, ensure_ascii=False)}")
+        logger.info(f"[util] 设置自动加入游戏参数结果: {json.dumps(data, indent=4, ensure_ascii=False)}")
+
+    @mj.command("gset")
+    async def get_settings(self, event: AstrMessageEvent):
+        """获取当前设置"""
+        if self.client is None:
+            yield event.plain_result(f"未设置mahjong_interface_url")
+            return
+        data = await self.client.get_settings()
+        yield event.plain_result(f"当前设置: {json.dumps(data, indent=4, ensure_ascii=False)}")
+        logger.info(f"[util] 当前设置: {json.dumps(data, indent=4, ensure_ascii=False)}")
+
+    @mj.command("sset")
+    async def save_settings(self, event: AstrMessageEvent):
+        """保存设置到文件"""
+        if self.client is None:
+            yield event.plain_result(f"未设置mahjong_interface_url")
+            return
+        data = await self.client.save_settings()
+        yield event.plain_result(f"保存设置结果: {json.dumps(data, indent=4, ensure_ascii=False)}")
+        logger.info(f"[util] 保存设置结果: {json.dumps(data, indent=4, ensure_ascii=False)}")
+
+    @mj.command("rm")
+    async def reload_model(self, event: AstrMessageEvent):
+        """重新加载模型"""
+        if self.client is None:
+            yield event.plain_result(f"未设置mahjong_interface_url")
+            return
+        data = await self.client.reload_model()
+        yield event.plain_result(f"重新加载模型结果: {json.dumps(data, indent=4, ensure_ascii=False)}")
+        logger.info(f"[util] 重新加载模型结果: {json.dumps(data, indent=4, ensure_ascii=False)}")
+
+    @mj.command("sd")
+    async def shutdown(self, event: AstrMessageEvent):
+        """关闭应用程序"""
+        if self.client is None:
+            yield event.plain_result(f"未设置mahjong_interface_url")
+            return
+        data = await self.client.shutdown()
+        yield event.plain_result(f"关闭应用程序结果: {json.dumps(data, indent=4, ensure_ascii=False)}")
+        logger.info(f"[util] 关闭应用程序结果: {json.dumps(data, indent=4, ensure_ascii=False)}")
+
+    @mj.command("hc")
+    async def health_check(self, event: AstrMessageEvent):
+        """健康检查接口"""
+        if self.client is None:
+            yield event.plain_result(f"未设置mahjong_interface_url")
+            return
+        data = await self.client.health_check()
+        yield event.plain_result(f"健康检查结果: {json.dumps(data, indent=4, ensure_ascii=False)}")
+        logger.info(f"[util] 健康检查结果: {json.dumps(data, indent=4, ensure_ascii=False)}")
 
     @filter.command_group("lishi")
     async def lishi(self):
