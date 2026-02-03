@@ -16,6 +16,7 @@ import numpy as np
 import random
 import json
 import os
+import asyncio
 
 # ====== 核心库 ======
 from .core.ChineseEntityExtractor import ChineseEntityExtractor
@@ -35,11 +36,17 @@ class util(Star):
         self.is_debug = False
         self.mahjong_interface_url = config.get("mahjong_interface_url", None)
         if self.mahjong_interface_url:
-            self.client = ApiClient()
+            self.client = ApiClient(self.mahjong_interface_url)
             logger.info(f"[util] 已使用:{self.mahjong_interface_url},作为麻将接口")
         else:
             self.client = None
             logger.info(f"[util] 未配置麻将接口请使用 /mj seturl [url] 设置")
+
+        # 麻将数据轮询定时器相关属性
+        self._mj_poll_task: asyncio.Task | None = None
+        self._mj_poll_interval: float = 5.0  # 默认轮询间隔（秒）
+        self.mj_game_info: dict | None = None  # 存储最新游戏信息
+        self.mj_ai_guide: dict | None = None   # 存储最新 AI 指导信息
         if self.data_dir is None:
             self.data_dir = StarTools.get_data_dir()
             self.data_dir_entity = os.path.join(self.data_dir, "entity")
@@ -418,6 +425,72 @@ class util(Star):
         data = await self.client.health_check()
         yield event.plain_result(f"健康检查结果: {json.dumps(data, indent=4, ensure_ascii=False)}")
         logger.info(f"[util] 健康检查结果: {json.dumps(data, indent=4, ensure_ascii=False)}")
+
+    @mj.command("st")
+    async def start_poll_timer(self, event: AstrMessageEvent, interval: float = 5.0):
+        """启动数据轮询定时器
+
+        Args:
+            interval: 轮询间隔（秒），默认 5 秒
+        """
+        if self.client is None:
+            yield event.plain_result("未设置mahjong_interface_url")
+            return
+        if self._mj_poll_task is not None and not self._mj_poll_task.done():
+            yield event.plain_result(f"定时器已在运行中，间隔: {self._mj_poll_interval}秒")
+            return
+        self._mj_poll_interval = interval
+        self._mj_poll_task = asyncio.create_task(self._mj_poll_loop())
+        yield event.plain_result(f"已启动数据轮询定时器，间隔: {interval}秒")
+        logger.info(f"[util] 已启动麻将数据轮询定时器，间隔: {interval}秒")
+
+    @mj.command("pt")
+    async def stop_poll_timer(self, event: AstrMessageEvent):
+        """停止数据轮询定时器"""
+        if self._mj_poll_task is None or self._mj_poll_task.done():
+            yield event.plain_result("定时器未在运行")
+            return
+        self._mj_poll_task.cancel()
+        try:
+            await self._mj_poll_task
+        except asyncio.CancelledError:
+            pass
+        self._mj_poll_task = None
+        yield event.plain_result("已停止数据轮询定时器")
+        logger.info("[util] 已停止麻将数据轮询定时器")
+
+    @mj.command("gp")
+    async def get_poll_data(self, event: AstrMessageEvent):
+        """获取当前轮询缓存的数据"""
+        result = {
+            "timer_running": self._mj_poll_task is not None and not self._mj_poll_task.done(),
+            "poll_interval": self._mj_poll_interval,
+            "game_info": self.mj_game_info,
+            "ai_guide": self.mj_ai_guide
+        }
+        yield event.plain_result(f"轮询数据:\n{json.dumps(result, indent=4, ensure_ascii=False)}")
+
+    async def _mj_poll_loop(self):
+        """麻将数据轮询循环"""
+        logger.info("[util] 麻将数据轮询循环已启动")
+        while True:
+            try:
+                # 并行获取游戏信息和 AI 指导
+                game_info_task = self.client.get_game_info()
+                ai_guide_task = self.client.get_ai_guide()
+                self.mj_game_info, self.mj_ai_guide = await asyncio.gather(
+                    game_info_task, ai_guide_task, return_exceptions=True
+                )
+                # 处理异常情况
+                if isinstance(self.mj_game_info, Exception):
+                    logger.warning(f"[util] 获取游戏信息失败: {self.mj_game_info}")
+                    self.mj_game_info = None
+                if isinstance(self.mj_ai_guide, Exception):
+                    logger.warning(f"[util] 获取AI指导失败: {self.mj_ai_guide}")
+                    self.mj_ai_guide = None
+            except Exception as e:
+                logger.error(f"[util] 轮询数据时发生错误: {e}")
+            await asyncio.sleep(self._mj_poll_interval)
 
     @filter.command_group("lishi")
     async def lishi(self):
