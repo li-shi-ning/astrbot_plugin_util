@@ -19,7 +19,7 @@ import os
 
 # ====== 核心库 ======
 from .core.ChineseEntityExtractor import ChineseEntityExtractor
-# from .core.Filter import register_pack_type
+from .core.Filter import register_pack_type
 
 
 @register("util", "lishinig", "私人插件", "1.0.0")
@@ -111,37 +111,37 @@ class util(Star):
             "无聊": [8, 25, 285, 293]
         }
 
-    # @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
-    # @register_pack_type()
-    # async def poke(self, event: AiocqhttpMessageEvent):
-    #     raw_message = getattr(event.message_obj, "raw_message", None)
-    #     bot_id = raw_message.get('self_id', None)
-    #     sender_id = raw_message.get('user_id', None)
-    #     target_id = raw_message.get('target_id', None)
-    #     group_id = raw_message.get('group_id', None)
-    #     if not bot_id or not sender_id or not target_id or str(target_id) != str(bot_id):
-    #         return
-    #     text = await self.weighted_random_choice(
-    #         self.poke_responses,
-    #         self.poke_weights
-    #     )
-    #     logger.info(f"检测到戳一戳,期望发送text:{text}")
-    #     if text == "pack":
-    #         payloads = {"user_id": sender_id}
-    #         if group_id:
-    #             payloads["group_id"] = group_id
-    #         bot = getattr(event, "bot", None)
-    #         if bot is None:
-    #             text = await self.weighted_random_choice(
-    #                 self.poke_responses[:-1],
-    #                 self.poke_weights[:-1]
-    #             )
-    #             logger.info(f"bot不是AIOCQHTTP,期望发送text:{text}")
-    #             yield event.plain_result(text)
-    #         else:
-    #             await bot.api.call_action('send_poke', **payloads)
-    #     else:
-    #         yield event.plain_result(text)
+    @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
+    @register_pack_type()
+    async def poke(self, event: AiocqhttpMessageEvent):
+        raw_message = getattr(event.message_obj, "raw_message", None)
+        bot_id = raw_message.get('self_id', None)
+        sender_id = raw_message.get('user_id', None)
+        target_id = raw_message.get('target_id', None)
+        group_id = raw_message.get('group_id', None)
+        if not bot_id or not sender_id or not target_id or str(target_id) != str(bot_id):
+            return
+        text = await self.weighted_random_choice(
+            self.poke_responses,
+            self.poke_weights
+        )
+        logger.info(f"检测到戳一戳,期望发送text:{text}")
+        if text == "pack":
+            payloads = {"user_id": sender_id}
+            if group_id:
+                payloads["group_id"] = group_id
+            bot = getattr(event, "bot", None)
+            if bot is None:
+                text = await self.weighted_random_choice(
+                    self.poke_responses[:-1],
+                    self.poke_weights[:-1]
+                )
+                logger.info(f"bot不是AIOCQHTTP,期望发送text:{text}")
+                yield event.plain_result(text)
+            else:
+                await bot.api.call_action('send_poke', **payloads)
+        else:
+            yield event.plain_result(text)
 
     async def weighted_random_choice(self, elements, weights):
         """
