@@ -757,6 +757,24 @@ class util(Star):
             if self.is_debug:
                 logger.info(f"对于:{text},识别到:{text_tag}")
 
+    @filter.on_llm_request(priority=49)
+    async def add_mj(self, event: AstrMessageEvent, request: ProviderRequest):
+        if self.client is None:
+            logger.debug(f"[util] 未设置mahjong_interface_url")
+        data = await self.client.get_status()
+        try:
+            ui_state = data["game"]["ui_state"]
+        except:
+            logger.error("[util] 获取ui_state失败")
+            logger.error(f"[util] data:{json.dumps(data, indent=4, ensure_ascii=False)}")
+            return
+        if "IN_GAME" in ui_state:
+            My_prompt = "-" * 10 + f'\n你正在进行雀魂麻将游戏,以下是游戏信息,如果对方进行了相关询问,请查看以下信息进行回答:'
+            My_prompt += "\n麻将牌信息:\n" + json.dumps(self.mj_game_info, indent=4, ensure_ascii=False)
+            My_prompt += "\n操作信息:\n" + json.dumps(self.mj_ai_guide, indent=4, ensure_ascii=False)
+            My_prompt += "\n" + "-" * 10
+            request.system_prompt += My_prompt
+
     async def get_message(self, group_id, bot, count):
         payloads = {
             "group_id":group_id,
