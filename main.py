@@ -490,6 +490,7 @@ class util(Star):
                     self.mj_ai_guide = None
             except Exception as e:
                 logger.error(f"[util] 轮询数据时发生错误: {e}")
+            logger.info()
             await asyncio.sleep(self._mj_poll_interval)
 
     @filter.command_group("lishi")
@@ -757,23 +758,68 @@ class util(Star):
             if self.is_debug:
                 logger.info(f"对于:{text},识别到:{text_tag}")
 
-    @filter.on_llm_request(priority=49)
+    @filter.on_llm_request(priority=48)
     async def add_mj(self, event: AstrMessageEvent, request: ProviderRequest):
+        """在游戏中时，向 LLM 注入麻将游戏上下文"""
         if self.client is None:
-            logger.debug(f"[util] 未设置mahjong_interface_url")
-        data = await self.client.get_status()
-        try:
-            ui_state = data["game"]["ui_state"]
-        except:
-            logger.error("[util] 获取ui_state失败")
-            logger.error(f"[util] data:{json.dumps(data, indent=4, ensure_ascii=False)}")
             return
-        if "IN_GAME" in ui_state:
-            My_prompt = "-" * 10 + f'\n你正在进行雀魂麻将游戏,以下是游戏信息,如果对方进行了相关询问,请查看以下信息进行回答:'
-            My_prompt += "\n麻将牌信息:\n" + json.dumps(self.mj_game_info, indent=4, ensure_ascii=False)
-            My_prompt += "\n操作信息:\n" + json.dumps(self.mj_ai_guide, indent=4, ensure_ascii=False)
-            My_prompt += "\n" + "-" * 10
-            request.system_prompt += My_prompt
+
+        # 获取游戏状态
+        try:
+            data = await self.client.get_status()
+            ui_state = data.get("game", {}).get("ui_state", "")
+        except Exception as e:
+            logger.debug(f"[util] 获取麻将状态失败: {e}")
+            return
+
+        # 仅在游戏中时注入信息
+        if "IN_GAME" not in ui_state:
+            return
+
+        # 检查轮询数据是否可用
+        if self.mj_game_info is None and self.mj_ai_guide is None:
+            logger.debug("[util] 麻将轮询数据未就绪，跳过注入")
+            return
+
+        # 构建结构化提示词
+        prompt_parts = [
+            "\n" + "=" * 40,
+            "【雀魂麻将游戏实时信息】",
+            "你当前正在进行雀魂麻将对局，以下是实时游戏数据。",
+            "当用户询问牌局相关问题时，请基于这些信息进行分析和回答。",
+            "【玩家对话守则】",
+            "1. 我绝不会透露手牌具体内容。这是禁忌。",
+            "2. 我只陈述自身状态：『听牌』、『未完成』、『牌形可动』。",
+            "3. 我的发言都是基于手牌现状的判断与决策。",
+            "4. 不讨论未发生的事，不回应无意义情绪。",
+            "【发言模式】",
+            "牌形已固定。听牌。",
+            "手牌混乱。这巡弃和。",
+            "改良可能存在。继续进攻。",
+            "不讨论手牌。只告知行动。",
+        ]
+
+        if self.mj_game_info:
+            prompt_parts.extend([
+                "## 当前牌局状态",
+                "```json",
+                json.dumps(self.mj_game_info, indent=2, ensure_ascii=False),
+                "```",
+                ""
+            ])
+
+        if self.mj_ai_guide:
+            prompt_parts.extend([
+                "## AI 推荐操作",
+                "```json",
+                json.dumps(self.mj_ai_guide, indent=2, ensure_ascii=False),
+                "```",
+                ""
+            ])
+
+        prompt_parts.append("=" * 40)
+
+        request.system_prompt += "\n".join(prompt_parts)
 
     async def get_message(self, group_id, bot, count):
         payloads = {
