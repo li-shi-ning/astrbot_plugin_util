@@ -1,13 +1,10 @@
 # ====== 核心模块 ======
-import os.path
-
 from astrbot.core.config import AstrBotConfig
-from astrbot.core.star.filter import HandlerFilter
-from astrbot.core.star.register.star_handler import get_handler_or_create
 from astrbot.api.provider import ProviderRequest
 from astrbot.core.star.star_handler import EventType, star_handlers_registry
 from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import AiocqhttpMessageEvent
 from astrbot.core.star.star import star_map
+from astrbot.api.star import StarTools
 
 # ====== API 模块 ======
 from astrbot.api import logger
@@ -16,51 +13,14 @@ from astrbot.api.star import Context, Star, register
 
 # ====== 第三方库 ======
 import numpy as np
-import json
 import random
+import json
+import os
 
 # ====== 核心库 ======
 from .core.ChineseEntityExtractor import ChineseEntityExtractor
+from .core.Filter import register_pack_type
 
-class PackTypeFilter(HandlerFilter):
-    """检查戳一戳事件"""
-    def filter(self, event: AstrMessageEvent, cfg: AstrBotConfig) -> bool:
-        raw_message = getattr(event.message_obj, "raw_message", None)
-        if not isinstance(raw_message, dict):
-            return False
-        return raw_message.get('sub_type') == 'poke'
-
-def register_pack_type(**kwargs):
-    """注册一个 PackTypeFilter"""
-    def decorator(awaitable):
-        handler_md = get_handler_or_create(awaitable, EventType.AdapterMessageEvent)
-        handler_md.event_filters.append(
-            PackTypeFilter(),
-        )
-        return awaitable
-    return decorator
-
-class StrictPokeFilter(HandlerFilter):
-    """严格检查AIOCQHTTP平台的戳一戳事件"""
-    def filter(self, event: AstrMessageEvent, cfg: AstrBotConfig) -> bool:
-        raw_message = getattr(event.message_obj, "raw_message", None)
-        if not isinstance(raw_message, dict):
-            return False
-        return (
-                raw_message.get('post_type') == 'notice' and
-                raw_message.get('notice_type') == 'notify' and
-                raw_message.get('sub_type') == 'poke'
-        )
-
-def register_strict_pack_type(**kwargs):
-    """注册一个 StrictPokeFilter"""
-    def decorator(awaitable):
-        handler_md = get_handler_or_create(awaitable, EventType.AdapterMessageEvent)
-        handler_md.event_filters.append(
-            StrictPokeFilter(),
-        )
-        return awaitable
-    return decorator
 
 @register("util", "lishinig", "私人插件", "1.0.0")
 class util(Star):
@@ -73,30 +33,33 @@ class util(Star):
         self.role_file_mapping = {}
         self.is_debug = False
         if self.data_dir is None:
+            self.data_dir = StarTools.get_data_dir()
+            self.data_dir_entity = os.path.join(self.data_dir, "entity")
             logger.error("数据加载失败")
             self.chineseentityextractor = ChineseEntityExtractor(
                 chinese_ratio_threshold = 0.2
             )
         else:
+            self.data_dir_entity = os.path.join(self.data_dir, "entity")
             self.chineseentityextractor = ChineseEntityExtractor(
                 user_dict_path = os.path.join(self.data_dir, "entity_dict.txt"),
                 chinese_ratio_threshold = 0.2
             )
             self.role_file_mapping = {
-                "mnsp_hiro": "二阶堂希罗.txt",
-                "mnsp_miria": "佐伯米莉亚.txt",
-                "mnsp_meruru": "冰上梅露露.txt",
-                "mnsp_noa": "城崎诺亚.txt",
-                "mnsp_anan": "夏目安安.txt",
-                "mnsp_maago": "宝生玛格.txt",
-                "mnsp_yuki": "月代雪.txt",
-                "mnsp_ema": "樱羽艾玛.txt",
-                "mnsp_sherii": "橘雪莉.txt",
-                "mnsp_koko": "泽渡可可.txt",
-                "mnsp_arisa": "紫藤亚里沙.txt",
-                "mnsp_reia": "莲见蕾雅.txt",
-                "mnsp_hanna": "远野汉娜.txt",
-                "mnsp_nanoka": "黑部奈叶香.txt"
+                "mnsp_hiro": "hiro.txt",
+                "mnsp_miria": "miria.txt",
+                "mnsp_meruru": "meruru.txt",
+                "mnsp_noa": "noa.txt",
+                "mnsp_anan": "anan.txt",
+                "mnsp_maago": "maago.txt",
+                "mnsp_yuki": "yuki.txt",
+                "mnsp_ema": "ema.txt",
+                "mnsp_sherii": "sherii.txt",
+                "mnsp_koko": "koko.txt",
+                "mnsp_arisa": "arisa.txt",
+                "mnsp_reia": "reia.txt",
+                "mnsp_hanna": "hanna.txt",
+                "mnsp_nanoka": "nanoka.txt"
             }
 
         self.poke_responses = np.array([
@@ -462,8 +425,8 @@ class util(Star):
         self.is_debug = set_bool == 1
         yield event.plain_result(f"设置debug:{self.is_debug}")
 
-    @filter.on_llm_request(priority=50)
-    async def add_doct(self, event: AstrMessageEvent, req: ProviderRequest):
+    @filter.on_llm_request(priority=49)
+    async def add_doct(self, event: AstrMessageEvent, request: ProviderRequest):
         text = event.message_str
         entities = self.chineseentityextractor.extract(text)
         text_tag = []
@@ -471,16 +434,27 @@ class util(Star):
             if not (entitie["type"] in text_tag):
                 text_tag.append(entitie["type"])
         text_tag = text_tag[:self.max_role_doct]
-        system_prompt = f'The following are role documents that may be used:\n'
-        for name in text_tag:
-            file_name = self.role_file_mapping.get(name, None)
-            file_path = os.path.join(self.data_dir, file_name)
-            if not file_name is None and os.path.exists(file_path):
-                with open(file_path, "r") as f:
-                    system_prompt += f"{f.read()}\n" + "-" * 10 + "\n"
-        if self.is_debug:
-            logger.info(f"注入提示词:\n{system_prompt}")
-        req.system_prompt += system_prompt
+        if len(text_tag) > 0:
+            My_prompt = f'The following are role documents that may be used:\n'
+            for name in text_tag:
+                file_name = self.role_file_mapping.get(name, None)
+                file_path = os.path.join(self.data_dir, file_name)
+                if not file_name is None and os.path.exists(file_path):
+                    with open(file_path, "r") as f:
+                        My_prompt += f"{f.read()}\n" + "-" * 10 + "\n"
+                else:
+                    logger.info("获取文件失败")
+                    logger.info(f"file_name:{file_name}")
+                    logger.info(f"file_path:{file_path}")
+                    logger.info(f"对于:{text},识别到:{text_tag}")
+            if self.is_debug:
+                logger.info(f"注入提示词:\n{My_prompt}")
+            request.system_prompt += My_prompt
+            if self.is_debug:
+                logger.info(f"注入后的系统提示词:\n{request.system_prompt}")
+        else:
+            if self.is_debug:
+                logger.info(f"对于:{text},识别到:{text_tag}")
 
     async def get_message(self, group_id, bot, count):
         payloads = {
@@ -509,3 +483,4 @@ class util(Star):
             logger.warning(f"检测到非法QQ号格式: {qq}")
             return False
         return True
+
