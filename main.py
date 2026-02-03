@@ -1,7 +1,7 @@
 # ====== 核心模块 ======
 from astrbot.core.config import AstrBotConfig
 from astrbot.api.provider import ProviderRequest
-from astrbot.core.star.star_handler import EventType, star_handlers_registry
+# from astrbot.core.star.star_handler import EventType, star_handlers_registry
 from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import AiocqhttpMessageEvent
 from astrbot.core.star.star import star_map
 from astrbot.api.star import StarTools
@@ -195,46 +195,46 @@ class util(Star):
     async def lishi(self):
         pass
 
-    @lishi.command("ah")
-    async def get_all_handler(self, event: AstrMessageEvent):
-        """获取所有处理器的详细信息"""
-        output_text = []
-        event_output_text = []
-
-        # 遍历所有消息事件处理器
-        for handler in star_handlers_registry.get_handlers_by_event_type(
-                EventType.AdapterMessageEvent,
-                plugins_name=None,  # None表示获取所有插件，不进行过滤
-        ):
-            # 创建一个字典来存储所有属性
-            handler_info = {}
-            handler_info_by_event = {}
-
-            # 1. 事件类型
-            handler_info["event_type"] = getattr(handler, "event_type", None)
-            # 2. 处理器完整名称（格式：模块名_函数名）
-            handler_info["handler_full_name"] = getattr(handler, "handler_full_name", None)
-            handler_info_by_event["handler_full_name"] = getattr(handler, "handler_full_name", None)
-            # 3. 处理器名称（函数名）
-            handler_info["handler_name"] = getattr(handler, "handler_name", None)
-            # 4. 处理器模块路径
-            handler_info["handler_module_path"] = getattr(handler, "handler_module_path", None)
-            handler_info_by_event["handler_module_path"] = getattr(handler, "handler_module_path", None)
-            # 5. 处理器描述信息
-            handler_info["desc"] = getattr(handler, "desc", "")
-            # 6. 处理器是否启用
-            handler_info["enabled"] = getattr(handler, "enabled", True)
-            # 7. 额外配置（如优先级等）
-            handler_info["extras_configs"] = getattr(handler, "extras_configs", {})
-            # 8. 事件过滤器列表
-            event_filters = getattr(handler, "event_filters", [])
-            handler_info["event_filters_count"] = len(event_filters)
-            handler_info["event_filters"] = []
-
-            output_text.append(str(handler_info))
-            event_output_text.append(str(handler_info_by_event))
-        logger.info(chr(10).join(output_text))
-        yield event.plain_result(chr(10).join(event_output_text))
+    # @lishi.command("ah")
+    # async def get_all_handler(self, event: AstrMessageEvent):
+    #     """获取所有处理器的详细信息"""
+    #     output_text = []
+    #     event_output_text = []
+    #
+    #     # 遍历所有消息事件处理器
+    #     for handler in star_handlers_registry.get_handlers_by_event_type(
+    #             EventType.AdapterMessageEvent,
+    #             plugins_name=None,  # None表示获取所有插件，不进行过滤
+    #     ):
+    #         # 创建一个字典来存储所有属性
+    #         handler_info = {}
+    #         handler_info_by_event = {}
+    #
+    #         # 1. 事件类型
+    #         handler_info["event_type"] = getattr(handler, "event_type", None)
+    #         # 2. 处理器完整名称（格式：模块名_函数名）
+    #         handler_info["handler_full_name"] = getattr(handler, "handler_full_name", None)
+    #         handler_info_by_event["handler_full_name"] = getattr(handler, "handler_full_name", None)
+    #         # 3. 处理器名称（函数名）
+    #         handler_info["handler_name"] = getattr(handler, "handler_name", None)
+    #         # 4. 处理器模块路径
+    #         handler_info["handler_module_path"] = getattr(handler, "handler_module_path", None)
+    #         handler_info_by_event["handler_module_path"] = getattr(handler, "handler_module_path", None)
+    #         # 5. 处理器描述信息
+    #         handler_info["desc"] = getattr(handler, "desc", "")
+    #         # 6. 处理器是否启用
+    #         handler_info["enabled"] = getattr(handler, "enabled", True)
+    #         # 7. 额外配置（如优先级等）
+    #         handler_info["extras_configs"] = getattr(handler, "extras_configs", {})
+    #         # 8. 事件过滤器列表
+    #         event_filters = getattr(handler, "event_filters", [])
+    #         handler_info["event_filters_count"] = len(event_filters)
+    #         handler_info["event_filters"] = []
+    #
+    #         output_text.append(str(handler_info))
+    #         event_output_text.append(str(handler_info_by_event))
+    #     logger.info(chr(10).join(output_text))
+    #     yield event.plain_result(chr(10).join(event_output_text))
 
     @lishi.command("hibmp")
     async def get_handler_by_mp(self, event: AstrMessageEvent, handler_module_path: str):
@@ -253,24 +253,24 @@ class util(Star):
             }
         yield event.plain_result(str(plugin_info))
 
-    @lishi.command("hibfn")
-    async def get_handler_by_fn(self, event: AstrMessageEvent, full_name: str):
-        """根据插件方法完整路径获取所有插件"""
-        handler = star_handlers_registry.get_handler_by_full_name(full_name)
-        handler_module_path = getattr(handler, "handler_module_path", None)
-        if handler_module_path is None:
-            yield event.plain_result("找不到")
-            return
-        plugin_info = {}
-        if handler_module_path in star_map:
-            plugin = star_map[handler_module_path]
-            plugin_info = {
-                "plugin_name": getattr(plugin, "name", "unknown"),
-                "plugin_desc": getattr(plugin, "desc", ""),
-                "plugin_version": getattr(plugin, "version", ""),
-                "plugin_author": getattr(plugin, "author", "")
-            }
-        yield event.plain_result(str(plugin_info))
+    # @lishi.command("hibfn")
+    # async def get_handler_by_fn(self, event: AstrMessageEvent, full_name: str):
+    #     """根据插件方法完整路径获取所有插件"""
+    #     handler = star_handlers_registry.get_handler_by_full_name(full_name)
+    #     handler_module_path = getattr(handler, "handler_module_path", None)
+    #     if handler_module_path is None:
+    #         yield event.plain_result("找不到")
+    #         return
+    #     plugin_info = {}
+    #     if handler_module_path in star_map:
+    #         plugin = star_map[handler_module_path]
+    #         plugin_info = {
+    #             "plugin_name": getattr(plugin, "name", "unknown"),
+    #             "plugin_desc": getattr(plugin, "desc", ""),
+    #             "plugin_version": getattr(plugin, "version", ""),
+    #             "plugin_author": getattr(plugin, "author", "")
+    #         }
+    #     yield event.plain_result(str(plugin_info))
 
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
     @lishi.command("kh")
