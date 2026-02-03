@@ -16,5 +16,11 @@
     "type": "string",
     "default": "",
     "hint": "http:/www.mahjong.com"
+  },
+  "mj_poll_interval": {
+    "description": "mj轮寻速度(如果是本机部署,这个值0.02最好)",
+    "type": "float",
+    "default": 1.0,
+    "hint": "3.0"
   }
 }

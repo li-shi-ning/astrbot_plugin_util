@@ -44,7 +44,7 @@ class util(Star):
 
         # 麻将数据轮询定时器相关属性
         self._mj_poll_task: asyncio.Task | None = None
-        self._mj_poll_interval: float = 5.0  # 默认轮询间隔（秒）
+        self._mj_poll_interval: float = config.get("mj_poll_interval", 5.0)
         self.mj_game_info: dict | None = None  # 存储最新游戏信息
         self.mj_ai_guide: dict | None = None   # 存储最新 AI 指导信息
         if self.data_dir is None:
