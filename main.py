@@ -511,11 +511,11 @@ class util(Star):
         self.mj_game_info = None
         self.mj_ai_guide = None
 
-    @filter.event_message_type(EventMessageType.GROUP_MESSAGE)
-    async def group_message_cs(self, event: AstrMessageEvent):
-        logger.info(f"[util] 收到群聊消息,类型为{type(event)}")
-        if not isinstance(event, AiocqhttpMessageEvent):
-            logger.info(f"[util] 收到群聊消息,并且不为AiocqhttpMessageEvent类型,为{type(event)}")
+    # @filter.event_message_type(EventMessageType.GROUP_MESSAGE)
+    # async def group_message_cs(self, event: AstrMessageEvent):
+    #     logger.info(f"[util] 收到群聊消息,类型为{type(event)}")
+    #     if not isinstance(event, AiocqhttpMessageEvent):
+    #         logger.info(f"[util] 收到群聊消息,并且不为AiocqhttpMessageEvent类型,为{type(event)}")
 
     @filter.command_group("lishi")
     async def lishi(self):
