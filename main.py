@@ -3,6 +3,7 @@ from astrbot.core.config import AstrBotConfig
 from astrbot.api.provider import ProviderRequest
 from astrbot.core.star.star_handler import EventType, star_handlers_registry
 from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import AiocqhttpMessageEvent
+from astrbot.core.star.filter.event_message_type import EventMessageType
 from astrbot.core.star.star import star_map
 from astrbot.api.star import StarTools
 
@@ -451,10 +452,15 @@ class util(Star):
             yield event.plain_result("定时器未在运行")
             return
         self._mj_poll_task.cancel()
+
         try:
-            await self._mj_poll_task
-        except asyncio.CancelledError:
-            pass
+            await asyncio.wait_for(self._mj_poll_task, timeout=5.0)
+            logger.info("[util] 定时器已正常停止")
+        except asyncio.TimeoutError:
+            logger.warning("[util] 停止定时器超时，任务可能卡住")
+        except Exception as e:
+            logger.error(f"[util] 停止定时器时发生错误: {e}")
+
         self._mj_poll_task = None
         yield event.plain_result("已停止数据轮询定时器")
         logger.info("[util] 已停止麻将数据轮询定时器")
@@ -488,10 +494,20 @@ class util(Star):
                 if isinstance(self.mj_ai_guide, Exception):
                     logger.warning(f"[util] 获取AI指导失败: {self.mj_ai_guide}")
                     self.mj_ai_guide = None
+            except asyncio.CancelledError:
+                logger.info("[util] 麻将数据轮询循环已停止")
+                break
             except Exception as e:
                 logger.error(f"[util] 轮询数据时发生错误: {e}")
             logger.info()
-            await asyncio.sleep(self._mj_poll_interval)
+            try:
+                await asyncio.sleep(self._mj_poll_interval)
+            except asyncio.CancelledError:
+                logger.info("[util] 休眠期间收到取消信号,麻将数据轮询循环已停止")
+                break
+
+        self.mj_game_info = None
+        self.mj_ai_guide = None
 
     @filter.command_group("lishi")
     async def lishi(self):
@@ -820,6 +836,11 @@ class util(Star):
         prompt_parts.append("=" * 40)
 
         request.system_prompt += "\n".join(prompt_parts)
+
+    @filter.event_message_type(EventMessageType.GROUP_MESSAGE)
+    async def GROUP_MESSAGE_CS(self, event: AstrMessageEvent):
+        if not isinstance(event, AiocqhttpMessageEvent):
+            logger.info(f"[util] 收到群聊消息,并且不为AiocqhttpMessageEvent类型,为{type(event)}")
 
     async def get_message(self, group_id, bot, count):
         payloads = {
