@@ -397,6 +397,8 @@ class util(Star):
         yield event.plain_result(f"保存设置结果: {json.dumps(data, indent=4, ensure_ascii=False)}")
         logger.info(f"[util] 保存设置结果: {json.dumps(data, indent=4, ensure_ascii=False)}")
 
+
+
     @mj.command("rm")
     async def reload_model(self, event: AstrMessageEvent):
         """重新加载模型"""
@@ -508,6 +510,12 @@ class util(Star):
 
         self.mj_game_info = None
         self.mj_ai_guide = None
+
+    @filter.event_message_type(EventMessageType.GROUP_MESSAGE)
+    async def group_message_cs(self, event: AstrMessageEvent):
+        logger.info(f"[util] 收到群聊消息,类型为{type(event)}")
+        if not isinstance(event, AiocqhttpMessageEvent):
+            logger.info(f"[util] 收到群聊消息,并且不为AiocqhttpMessageEvent类型,为{type(event)}")
 
     @filter.command_group("lishi")
     async def lishi(self):
@@ -836,11 +844,6 @@ class util(Star):
         prompt_parts.append("=" * 40)
 
         request.system_prompt += "\n".join(prompt_parts)
-
-    @filter.event_message_type(EventMessageType.GROUP_MESSAGE)
-    async def GROUP_MESSAGE_CS(self, event: AstrMessageEvent):
-        if not isinstance(event, AiocqhttpMessageEvent):
-            logger.info(f"[util] 收到群聊消息,并且不为AiocqhttpMessageEvent类型,为{type(event)}")
 
     async def get_message(self, group_id, bot, count):
         payloads = {
