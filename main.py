@@ -782,6 +782,19 @@ class util(Star):
             if self.is_debug:
                 logger.info(f"对于:{text},识别到:{text_tag}")
 
+    @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
+    @lishi.command("handoff")
+    async def set_debug(self, event: AiocqhttpMessageEvent):
+        handoffs = self.context.subagent_orchestrator.handoffs
+        for handoff in handoffs:
+            logger.debug("-" * 20)
+            logger.debug(f"[util] handoff:{handoff.name}")
+            try:
+                logger.debug(f"[util] handoff_agent_name:{handoff.agent.name}")
+            except:
+                logger.error(f"[util] {handoff.name} 没有 name 属性")
+                raise
+
     @filter.on_llm_request(priority=48)
     async def add_mj(self, event: AstrMessageEvent, request: ProviderRequest):
         """在游戏中时，向 LLM 注入麻将游戏上下文"""
