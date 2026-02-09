@@ -784,7 +784,8 @@ class util(Star):
 
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
     @lishi.command("handoff")
-    async def set_debug(self, event: AiocqhttpMessageEvent):
+    async def get_handoff(self, event: AiocqhttpMessageEvent):
+        """获取handoff"""
         handoffs = self.context.subagent_orchestrator.handoffs
         logger.debug(f"[util] handoff数量:{len(handoffs)}")
         for handoff in handoffs:
