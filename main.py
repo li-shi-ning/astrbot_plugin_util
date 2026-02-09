@@ -798,6 +798,20 @@ class util(Star):
                 raise
         yield event.plain_result(f"handoff数量:{len(handoffs)}")
 
+    @filter.on_astrbot_loaded()
+    async def init_handoff(self):
+        """在astrbot加载完毕时立马检测"""
+        handoffs = self.context.subagent_orchestrator.handoffs
+        logger.debug(f"[util] handoff数量:{len(handoffs)}")
+        for handoff in handoffs:
+            logger.debug("-" * 20)
+            logger.debug(f"[util] handoff:{handoff.name}")
+            try:
+                logger.debug(f"[util] handoff_agent_name:{handoff.agent.name}")
+            except:
+                logger.error(f"[util] {handoff.name} 没有 .agent.name 属性")
+                raise
+
     @filter.on_llm_request(priority=48)
     async def add_mj(self, event: AstrMessageEvent, request: ProviderRequest):
         """在游戏中时，向 LLM 注入麻将游戏上下文"""
