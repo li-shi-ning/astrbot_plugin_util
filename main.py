@@ -854,8 +854,8 @@ class util(Star):
             }
         }
 
-        config_metdata_trans_cn.setdefault("platform_group", {}).setdefault("platform", {})
-        config_metdata_trans_en.setdefault("platform_group", {}).setdefault("platform", {})
+        config_metdata_trans_cn.setdefault("features", {}).setdefault("config-metadata", {}).setdefault("platform_group", {}).setdefault("platform", {})
+        config_metdata_trans_en.setdefault("features", {}).setdefault("config-metadata", {}).setdefault("platform_group", {}).setdefault("platform", {})
 
         for name in astrbook_items_cn.keys():
             config_metdata_trans_cn["platform_group"]["platform"][name] = astrbook_items_cn[name]
