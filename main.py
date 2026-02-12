@@ -1,4 +1,6 @@
 # ====== 核心模块 ======
+from matplotlib.pyplot import ylabel
+
 from astrbot.core.config import AstrBotConfig
 from astrbot.api.provider import ProviderRequest
 from astrbot.core.star.star_handler import EventType, star_handlers_registry
@@ -799,8 +801,10 @@ class util(Star):
     @lishi.command("incs")
     async def get_i18n_cs(self, event: AstrMessageEvent):
         """测试i18n"""
+
         logger.info("[util] 开始更改")
         yield event.plain_result("开始更改")
+
         config_metdata_trans_cn = CONFIG_METADATA_TRANS['zh-CN']
         config_metdata_trans_en = CONFIG_METADATA_TRANS['en-US']
 
@@ -850,10 +854,13 @@ class util(Star):
             }
         }
 
+        config_metdata_trans_cn.setdefault("platform_group", {}).setdefault("platform", {})
+        config_metdata_trans_en.setdefault("platform_group", {}).setdefault("platform", {})
+
         for name in astrbook_items_cn.keys():
-            config_metdata_trans_cn[name] = astrbook_items_cn[name]
+            config_metdata_trans_cn["platform_group"]["platform"][name] = astrbook_items_cn[name]
         for name in astrbook_items_en.keys():
-            config_metdata_trans_en[name] = astrbook_items_en[name]
+            config_metdata_trans_en["platform_group"]["platform"][name] = astrbook_items_en[name]
         logger.info(f"[util] 修改后的:{json.dumps(CONFIG_METADATA_TRANS, indent=2, ensure_ascii=False)}")
         yield event.plain_result("修改CONFIG_METADATA_TRANS成功")
 
