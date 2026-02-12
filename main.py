@@ -858,9 +858,9 @@ class util(Star):
         config_metdata_trans_en.setdefault("features", {}).setdefault("config-metadata", {}).setdefault("platform_group", {}).setdefault("platform", {})
 
         for name in astrbook_items_cn.keys():
-            config_metdata_trans_cn["platform_group"]["platform"][name] = astrbook_items_cn[name]
+            config_metdata_trans_cn["features"]["config-metadata"]["platform_group"]["platform"][name] = astrbook_items_cn[name]
         for name in astrbook_items_en.keys():
-            config_metdata_trans_en["platform_group"]["platform"][name] = astrbook_items_en[name]
+            config_metdata_trans_en["features"]["config-metadata"]["platform_group"]["platform"][name] = astrbook_items_en[name]
         logger.info(f"[util] 修改后的:{json.dumps(CONFIG_METADATA_TRANS, indent=2, ensure_ascii=False)}")
         yield event.plain_result("修改CONFIG_METADATA_TRANS成功")
 
