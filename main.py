@@ -797,7 +797,7 @@ class util(Star):
         yield event.plain_result(f"handoff数量:{len(handoffs)}")
 
     @lishi.command("incs")
-    def get_i18n_cs(self, event: AstrMessageEvent):
+    async def get_i18n_cs(self, event: AstrMessageEvent):
         """测试i18n"""
         logger.info("[util] 开始更改")
         yield event.plain_result("开始更改")
