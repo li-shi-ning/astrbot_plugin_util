@@ -799,10 +799,12 @@ class util(Star):
     @lishi.command("incs")
     def get_i18n_cs(self, event: AstrMessageEvent):
         """测试i18n"""
+        logger.info("[util] 开始更改")
+        yield event.plain_result("开始更改")
         config_metdata_trans_cn = CONFIG_METADATA_TRANS['zh-CN']
         config_metdata_trans_en = CONFIG_METADATA_TRANS['en-US']
 
-        _astrbook_items_en = {
+        astrbook_items_en = {
             "api_base": {
                 "description": "[api_base] 你好！这里是英文测试的description喵",
                 "hint": "[api_base] 你好！这里是英文测试的hint喵"
@@ -825,7 +827,7 @@ class util(Star):
             }
         }
 
-        _astrbook_items_cn = {
+        astrbook_items_cn = {
             "api_base": {
                 "description": "[api_base] 你好！这里是中文测试的description喵",
                 "hint": "[api_base] 你好！这里是中文测试的hint喵"
@@ -848,12 +850,12 @@ class util(Star):
             }
         }
 
-        for name in _astrbook_items_cn.keys():
-            config_metdata_trans_cn[name] = _astrbook_items_cn[name]
-        for name in _astrbook_items_en.keys():
-            config_metdata_trans_en[name] = _astrbook_items_en[name]
+        for name in astrbook_items_cn.keys():
+            config_metdata_trans_cn[name] = astrbook_items_cn[name]
+        for name in astrbook_items_en.keys():
+            config_metdata_trans_en[name] = astrbook_items_en[name]
         logger.info(f"[util] 修改后的:{json.dumps(CONFIG_METADATA_TRANS, indent=2, ensure_ascii=False)}")
-        yield event.plain_result("[util] 修改CONFIG_METADATA_TRANS成功")
+        yield event.plain_result("修改CONFIG_METADATA_TRANS成功")
 
     @filter.on_astrbot_loaded()
     async def init_handoff(self):
