@@ -3,17 +3,9 @@ from astrbot.core.config import AstrBotConfig
 from astrbot.api.provider import ProviderRequest
 from astrbot.core.star.star_handler import EventType, star_handlers_registry
 from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import AiocqhttpMessageEvent
-from astrbot.core.star.filter.event_message_type import EventMessageType
 from astrbot.core.star.star import star_map
 from astrbot.api.star import StarTools
-from astrbot.core.config.default import (
-    CONFIG_METADATA_2,
-    CONFIG_METADATA_3,
-    CONFIG_METADATA_3_SYSTEM,
-    DEFAULT_CONFIG,
-    DEFAULT_VALUE_MAP,
-    CONFIG_METADATA_TRANS
-)
+from astrbot.core.config.default import CONFIG_METADATA_TRANS
 
 # ====== API 模块 ======
 from astrbot.api import logger
@@ -804,6 +796,65 @@ class util(Star):
                 raise
         yield event.plain_result(f"handoff数量:{len(handoffs)}")
 
+    @lishi.command("incs")
+    def get_i18n_cs(self, event: AstrMessageEvent):
+        """测试i18n"""
+        config_metdata_trans_cn = CONFIG_METADATA_TRANS['zh-CN']
+        config_metdata_trans_en = CONFIG_METADATA_TRANS['en-US']
+
+        _astrbook_items_en = {
+            "api_base": {
+                "description": "[api_base] 你好！这里是英文测试的description喵",
+                "hint": "[api_base] 你好！这里是英文测试的hint喵"
+            },
+            "token": {
+                "description": "[token] 你好！这里是英文测试的description喵",
+                "hint": "[token] 你好！这里是英文测试的hint喵"
+            },
+            "auto_browse": {
+                "description": "[auto_browse] 你好！这里是英文测试的description喵",
+                "hint": "[auto_browse] 你好！这里是英文测试的hint喵"
+            },
+            "browse_interval": {
+                "description": "[browse_interval] 你好！这里是英文测试的description喵",
+                "hint": "[browse_interval] 你好！这里是英文测试的hint喵"
+            },
+            "auto_reply_mentions": {
+                "description": "[auto_reply_mentions] 你好！这里是英文测试的description喵",
+                "hint": "[auto_reply_mentions] 你好！这里是英文测试的hint喵"
+            }
+        }
+
+        _astrbook_items_cn = {
+            "api_base": {
+                "description": "[api_base] 你好！这里是中文测试的description喵",
+                "hint": "[api_base] 你好！这里是中文测试的hint喵"
+            },
+            "token": {
+                "description": "[token] 你好！这里是中文测试的description喵",
+                "hint": "[token] 你好！这里是中文测试的hint喵"
+            },
+            "auto_browse": {
+                "description": "[auto_browse] 你好！这里是中文测试的description喵",
+                "hint": "[auto_browse] 你好！这里是中文测试的hint喵"
+            },
+            "browse_interval": {
+                "description": "[browse_interval] 你好！这里是中文测试的description喵",
+                "hint": "[browse_interval] 你好！这里是中文测试的hint喵"
+            },
+            "auto_reply_mentions": {
+                "description": "[auto_reply_mentions] 你好！这里是中文测试的description喵",
+                "hint": "[auto_reply_mentions] 你好！这里是中文测试的hint喵"
+            }
+        }
+
+        for name in _astrbook_items_cn.keys():
+            config_metdata_trans_cn[name] = _astrbook_items_cn[name]
+        for name in _astrbook_items_en.keys():
+            config_metdata_trans_en[name] = _astrbook_items_en[name]
+        logger.info(f"[util] 修改后的:{json.dumps(CONFIG_METADATA_TRANS, indent=2, ensure_ascii=False)}")
+        yield event.plain_result("[util] 修改CONFIG_METADATA_TRANS成功")
+
     @filter.on_astrbot_loaded()
     async def init_handoff(self):
         """在astrbot加载完毕时立马检测"""
@@ -909,61 +960,3 @@ class util(Star):
             return False
         return True
 
-    @lishi.command("i18ncs")
-    def i18n_cs(self, event: AstrMessageEvent):
-        """测试i18n"""
-        config_metdata_trans_cn = CONFIG_METADATA_TRANS['zh-CN']
-        config_metdata_trans_en = CONFIG_METADATA_TRANS['en-US']
-
-        _astrbook_items_en = {
-            "api_base": {
-                "description": "[api_base] 你好！这里是英文测试的description喵",
-                "hint": "[api_base] 你好！这里是英文测试的hint喵"
-            },
-            "token": {
-                "description": "[token] 你好！这里是英文测试的description喵",
-                "hint": "[token] 你好！这里是英文测试的hint喵"
-            },
-            "auto_browse": {
-                "description": "[auto_browse] 你好！这里是英文测试的description喵",
-                "hint": "[auto_browse] 你好！这里是英文测试的hint喵"
-            },
-            "browse_interval": {
-                "description": "[browse_interval] 你好！这里是英文测试的description喵",
-                "hint": "[browse_interval] 你好！这里是英文测试的hint喵"
-            },
-            "auto_reply_mentions": {
-                "description": "[auto_reply_mentions] 你好！这里是英文测试的description喵",
-                "hint": "[auto_reply_mentions] 你好！这里是英文测试的hint喵"
-            }
-        }
-
-        _astrbook_items_cn = {
-            "api_base": {
-                "description": "[api_base] 你好！这里是中文测试的description喵",
-                "hint": "[api_base] 你好！这里是中文测试的hint喵"
-            },
-            "token": {
-                "description": "[token] 你好！这里是中文测试的description喵",
-                "hint": "[token] 你好！这里是中文测试的hint喵"
-            },
-            "auto_browse": {
-                "description": "[auto_browse] 你好！这里是中文测试的description喵",
-                "hint": "[auto_browse] 你好！这里是中文测试的hint喵"
-            },
-            "browse_interval": {
-                "description": "[browse_interval] 你好！这里是中文测试的description喵",
-                "hint": "[browse_interval] 你好！这里是中文测试的hint喵"
-            },
-            "auto_reply_mentions": {
-                "description": "[auto_reply_mentions] 你好！这里是中文测试的description喵",
-                "hint": "[auto_reply_mentions] 你好！这里是中文测试的hint喵"
-            }
-        }
-
-        for name in _astrbook_items_cn.keys():
-            config_metdata_trans_cn[name] = _astrbook_items_cn[name]
-        for name in _astrbook_items_en.keys():
-            config_metdata_trans_en[name] = _astrbook_items_en[name]
-        logger.info(f"[util] 修改后的:{json.dumps(CONFIG_METADATA_TRANS, indent=2, ensure_ascii=False)}")
-        yield event.plain_result("[util] 修改CONFIG_METADATA_TRANS成功")
