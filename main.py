@@ -7,7 +7,6 @@ from astrbot.core.star.star_handler import EventType, star_handlers_registry
 from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import AiocqhttpMessageEvent
 from astrbot.core.star.star import star_map
 from astrbot.api.star import StarTools
-from astrbot.core.config.default import CONFIG_METADATA_TRANS
 
 # ====== API 模块 ======
 from astrbot.api import logger
@@ -161,26 +160,6 @@ class util(Star):
         else:
             yield event.plain_result(text)
 
-    async def weighted_random_choice(self, elements, weights):
-        """
-        加权随机选择函数
-        参数:
-        elements: 元素序列
-        weights: 权重序列
-        返回:
-        随机选择的元素
-        """
-        # 如果已经是numpy数组，直接使用
-        if isinstance(weights, np.ndarray):
-            probs = weights / weights.sum()
-            idx = np.random.choice(len(elements), p=probs)
-        else:
-            # 转换为numpy数组处理
-            weights_arr = np.array(weights, dtype=np.float64)
-            probs = weights_arr / weights_arr.sum()
-            idx = np.random.choice(len(elements), p=probs)
-        return elements[idx] if not isinstance(elements, np.ndarray) else elements[idx]
-
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
     async def replyMessage(self,event: AiocqhttpMessageEvent):
         """获取所有消息,进行贴表情"""
@@ -200,14 +179,6 @@ class util(Star):
             "emoji_id":emoji_id
         }
         await bot.api.call_action('set_msg_emoji_like', **payloads)
-
-    async def get_emoji_id(self, text):
-        if "正确" in text:
-            return self.emotions_mapping["开心"][random.randint(0,len(self.emotions_mapping["开心"]) - 1)]
-        elif "摆烂" in text:
-            return self.emotions_mapping["无语"][random.randint(0, len(self.emotions_mapping["无语"]) - 1)]
-        else:
-            return None
 
     @filter.command_group("mj")
     async def mj(self):
@@ -760,11 +731,12 @@ class util(Star):
             if not (entitie["type"] in text_tag):
                 text_tag.append(entitie["type"])
         text_tag = text_tag[:self.max_role_doct]
+        logger.info(f"[text_tag]: {text_tag}")
         if len(text_tag) > 0:
             My_prompt = f'The following are role documents that may be used:\n'
             for name in text_tag:
                 file_name = self.role_file_mapping.get(name, None)
-                file_path = os.path.join(self.data_dir, file_name)
+                file_path = os.path.join(self.data_dir, os.path.join("./entity", file_name))
                 if not file_name is None and os.path.exists(file_path):
                     with open(file_path, "r") as f:
                         My_prompt += f"{f.read()}\n" + "-" * 10 + "\n"
@@ -798,71 +770,71 @@ class util(Star):
                 raise
         yield event.plain_result(f"handoff数量:{len(handoffs)}")
 
-    @lishi.command("incs")
-    async def get_i18n_cs(self, event: AstrMessageEvent):
-        """测试i18n"""
-
-        logger.info("[util] 开始更改")
-        yield event.plain_result("开始更改")
-
-        config_metdata_trans_cn = CONFIG_METADATA_TRANS['zh-CN']
-        config_metdata_trans_en = CONFIG_METADATA_TRANS['en-US']
-
-        astrbook_items_en = {
-            "api_base": {
-                "description": "[api_base] 你好！这里是英文测试的description喵",
-                "hint": "[api_base] 你好！这里是英文测试的hint喵"
-            },
-            "token": {
-                "description": "[token] 你好！这里是英文测试的description喵",
-                "hint": "[token] 你好！这里是英文测试的hint喵"
-            },
-            "auto_browse": {
-                "description": "[auto_browse] 你好！这里是英文测试的description喵",
-                "hint": "[auto_browse] 你好！这里是英文测试的hint喵"
-            },
-            "browse_interval": {
-                "description": "[browse_interval] 你好！这里是英文测试的description喵",
-                "hint": "[browse_interval] 你好！这里是英文测试的hint喵"
-            },
-            "auto_reply_mentions": {
-                "description": "[auto_reply_mentions] 你好！这里是英文测试的description喵",
-                "hint": "[auto_reply_mentions] 你好！这里是英文测试的hint喵"
-            }
-        }
-
-        astrbook_items_cn = {
-            "api_base": {
-                "description": "[api_base] 你好！这里是中文测试的description喵",
-                "hint": "[api_base] 你好！这里是中文测试的hint喵"
-            },
-            "token": {
-                "description": "[token] 你好！这里是中文测试的description喵",
-                "hint": "[token] 你好！这里是中文测试的hint喵"
-            },
-            "auto_browse": {
-                "description": "[auto_browse] 你好！这里是中文测试的description喵",
-                "hint": "[auto_browse] 你好！这里是中文测试的hint喵"
-            },
-            "browse_interval": {
-                "description": "[browse_interval] 你好！这里是中文测试的description喵",
-                "hint": "[browse_interval] 你好！这里是中文测试的hint喵"
-            },
-            "auto_reply_mentions": {
-                "description": "[auto_reply_mentions] 你好！这里是中文测试的description喵",
-                "hint": "[auto_reply_mentions] 你好！这里是中文测试的hint喵"
-            }
-        }
-
-        config_metdata_trans_cn.setdefault("features", {}).setdefault("config-metadata", {}).setdefault("platform_group", {}).setdefault("platform", {})
-        config_metdata_trans_en.setdefault("features", {}).setdefault("config-metadata", {}).setdefault("platform_group", {}).setdefault("platform", {})
-
-        for name in astrbook_items_cn.keys():
-            config_metdata_trans_cn["features"]["config-metadata"]["platform_group"]["platform"][name] = astrbook_items_cn[name]
-        for name in astrbook_items_en.keys():
-            config_metdata_trans_en["features"]["config-metadata"]["platform_group"]["platform"][name] = astrbook_items_en[name]
-        logger.info(f"[util] 修改后的:{json.dumps(CONFIG_METADATA_TRANS, indent=2, ensure_ascii=False)}")
-        yield event.plain_result("修改CONFIG_METADATA_TRANS成功")
+    # @lishi.command("incs")
+    # async def get_i18n_cs(self, event: AstrMessageEvent):
+    #     """测试i18n"""
+    #
+    #     logger.info("[util] 开始更改")
+    #     yield event.plain_result("开始更改")
+    #
+    #     config_metdata_trans_cn = CONFIG_METADATA_TRANS['zh-CN']
+    #     config_metdata_trans_en = CONFIG_METADATA_TRANS['en-US']
+    #
+    #     astrbook_items_en = {
+    #         "api_base": {
+    #             "description": "[api_base] 你好！这里是英文测试的description喵",
+    #             "hint": "[api_base] 你好！这里是英文测试的hint喵"
+    #         },
+    #         "token": {
+    #             "description": "[token] 你好！这里是英文测试的description喵",
+    #             "hint": "[token] 你好！这里是英文测试的hint喵"
+    #         },
+    #         "auto_browse": {
+    #             "description": "[auto_browse] 你好！这里是英文测试的description喵",
+    #             "hint": "[auto_browse] 你好！这里是英文测试的hint喵"
+    #         },
+    #         "browse_interval": {
+    #             "description": "[browse_interval] 你好！这里是英文测试的description喵",
+    #             "hint": "[browse_interval] 你好！这里是英文测试的hint喵"
+    #         },
+    #         "auto_reply_mentions": {
+    #             "description": "[auto_reply_mentions] 你好！这里是英文测试的description喵",
+    #             "hint": "[auto_reply_mentions] 你好！这里是英文测试的hint喵"
+    #         }
+    #     }
+    #
+    #     astrbook_items_cn = {
+    #         "api_base": {
+    #             "description": "[api_base] 你好！这里是中文测试的description喵",
+    #             "hint": "[api_base] 你好！这里是中文测试的hint喵"
+    #         },
+    #         "token": {
+    #             "description": "[token] 你好！这里是中文测试的description喵",
+    #             "hint": "[token] 你好！这里是中文测试的hint喵"
+    #         },
+    #         "auto_browse": {
+    #             "description": "[auto_browse] 你好！这里是中文测试的description喵",
+    #             "hint": "[auto_browse] 你好！这里是中文测试的hint喵"
+    #         },
+    #         "browse_interval": {
+    #             "description": "[browse_interval] 你好！这里是中文测试的description喵",
+    #             "hint": "[browse_interval] 你好！这里是中文测试的hint喵"
+    #         },
+    #         "auto_reply_mentions": {
+    #             "description": "[auto_reply_mentions] 你好！这里是中文测试的description喵",
+    #             "hint": "[auto_reply_mentions] 你好！这里是中文测试的hint喵"
+    #         }
+    #     }
+    #
+    #     config_metdata_trans_cn.setdefault("features", {}).setdefault("config-metadata", {}).setdefault("platform_group", {}).setdefault("platform", {})
+    #     config_metdata_trans_en.setdefault("features", {}).setdefault("config-metadata", {}).setdefault("platform_group", {}).setdefault("platform", {})
+    #
+    #     for name in astrbook_items_cn.keys():
+    #         config_metdata_trans_cn["features"]["config-metadata"]["platform_group"]["platform"][name] = astrbook_items_cn[name]
+    #     for name in astrbook_items_en.keys():
+    #         config_metdata_trans_en["features"]["config-metadata"]["platform_group"]["platform"][name] = astrbook_items_en[name]
+    #     logger.info(f"[util] 修改后的:{json.dumps(CONFIG_METADATA_TRANS, indent=2, ensure_ascii=False)}")
+    #     yield event.plain_result("修改CONFIG_METADATA_TRANS成功")
 
     @filter.on_astrbot_loaded()
     async def init_handoff(self):
@@ -969,3 +941,30 @@ class util(Star):
             return False
         return True
 
+    async def get_emoji_id(self, text):
+        if "正确" in text:
+            return self.emotions_mapping["开心"][random.randint(0,len(self.emotions_mapping["开心"]) - 1)]
+        elif "摆烂" in text:
+            return self.emotions_mapping["无语"][random.randint(0, len(self.emotions_mapping["无语"]) - 1)]
+        else:
+            return None
+
+    async def weighted_random_choice(self, elements, weights):
+        """
+        加权随机选择函数
+        参数:
+        elements: 元素序列
+        weights: 权重序列
+        返回:
+        随机选择的元素
+        """
+        # 如果已经是numpy数组，直接使用
+        if isinstance(weights, np.ndarray):
+            probs = weights / weights.sum()
+            idx = np.random.choice(len(elements), p=probs)
+        else:
+            # 转换为numpy数组处理
+            weights_arr = np.array(weights, dtype=np.float64)
+            probs = weights_arr / weights_arr.sum()
+            idx = np.random.choice(len(elements), p=probs)
+        return elements[idx] if not isinstance(elements, np.ndarray) else elements[idx]
