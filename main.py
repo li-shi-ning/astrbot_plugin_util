@@ -6,12 +6,14 @@ from astrbot.api.provider import ProviderRequest
 from astrbot.core.star.star_handler import EventType, star_handlers_registry
 from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import AiocqhttpMessageEvent
 from astrbot.core.star.star import star_map
-from astrbot.api.star import StarTools
+from astrbot.core.agent.tool import FunctionTool
+from astrbot.core.message.message_event_result import MessageChain
 
 # ====== API 模块 ======
 from astrbot.api import logger
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register
+from astrbot.api.star import StarTools
 
 # ====== 第三方库 ======
 import numpy as np
@@ -19,6 +21,7 @@ import random
 import json
 import os
 import asyncio
+from mcp.types import CallToolResult
 
 # ====== 核心库 ======
 from .core.ChineseEntityExtractor import ChineseEntityExtractor
@@ -733,10 +736,12 @@ class util(Star):
         text_tag = text_tag[:self.max_role_doct]
         logger.info(f"[text_tag]: {text_tag}")
         if len(text_tag) > 0:
+            logger.info(f"[text_tag]: {text_tag}")
             My_prompt = f'The following are role documents that may be used:\n'
             for name in text_tag:
                 file_name = self.role_file_mapping.get(name, None)
                 file_path = os.path.join(self.data_dir, os.path.join("./entity", file_name))
+                logger.info(f"file_name:{file_name},file_path:{file_path}")
                 if not file_name is None and os.path.exists(file_path):
                     with open(file_path, "r") as f:
                         My_prompt += f"{f.read()}\n" + "-" * 10 + "\n"
@@ -968,3 +973,16 @@ class util(Star):
             probs = weights_arr / weights_arr.sum()
             idx = np.random.choice(len(elements), p=probs)
         return elements[idx] if not isinstance(elements, np.ndarray) else elements[idx]
+
+    @filter.on_llm_tool_respond()
+    async def template_output(
+        self,
+        event: AstrMessageEvent,
+        tool: FunctionTool,
+        tool_args: dict | None,
+        tool_result: CallToolResult | None
+    ) -> None:
+        logger.debug(f"[util] {tool.name}")
+        if tool.name in ["list_future_tasks"]:
+            await event.send(MessageChain().message("调用工具"))
+
