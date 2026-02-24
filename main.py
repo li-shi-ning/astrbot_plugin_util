@@ -972,14 +972,14 @@ class util(Star):
             idx = np.random.choice(len(elements), p=probs)
         return elements[idx] if not isinstance(elements, np.ndarray) else elements[idx]
 
-    @filter.on_llm_tool_respond()
-    async def template_output(
-        self,
-        event: AstrMessageEvent,
-        tool: FunctionTool,
-        tool_args: dict | None,
-        tool_result: CallToolResult | None
-    ) -> None:
-        logger.debug(f"[util] {tool.name}")
-        await event.send(MessageChain().message(f"调用工具:{tool.name}"))
+    # @filter.on_llm_tool_respond()
+    # async def template_output(
+    #     self,
+    #     event: AstrMessageEvent,
+    #     tool: FunctionTool,
+    #     tool_args: dict | None,
+    #     tool_result: CallToolResult | None
+    # ) -> None:
+    #     logger.debug(f"[util] {tool.name}")
+    #     await event.send(MessageChain().message(f"调用工具:{tool.name}"))
 
