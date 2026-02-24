@@ -1,6 +1,4 @@
 # ====== 核心模块 ======
-from matplotlib.pyplot import ylabel
-
 from astrbot.core.config import AstrBotConfig
 from astrbot.api.provider import ProviderRequest
 from astrbot.core.star.star_handler import EventType, star_handlers_registry
