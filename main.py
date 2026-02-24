@@ -983,6 +983,5 @@ class util(Star):
         tool_result: CallToolResult | None
     ) -> None:
         logger.debug(f"[util] {tool.name}")
-        if tool.name in ["list_future_tasks"]:
-            await event.send(MessageChain().message("调用工具"))
+        await event.send(MessageChain().message(f"调用工具:{tool.name}"))
 
