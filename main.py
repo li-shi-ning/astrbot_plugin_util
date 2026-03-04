@@ -458,6 +458,7 @@ class util(Star):
                 yield event.plain_result("请在群聊里面使用,或输入group_id")
                 return
         else:
+            group_id = str(group_id)
             group_id = group_id.strip()
 
         if not self._validate_qq(qq):
