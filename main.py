@@ -449,7 +449,7 @@ class util(Star):
             if self.is_debug:
                 logger.info(f"对于:{text},识别到:{text_tag}")
 
-    @lishi.command("")
+    @lishi.command("gin")
     async def get_info_number(self, event: AiocqhttpMessageEvent, qq: str, group_id:str|None=None):
         """获取一个群聊qq账号信息"""
         if group_id is None:
