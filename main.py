@@ -457,12 +457,15 @@ class util(Star):
             if group_id is None:
                 yield event.plain_result("请在群聊里面使用,或输入group_id")
                 return
+        else:
+            group_id = group_id.strip()
 
         if not self._validate_qq(qq):
             yield event.plain_result("请输入正确的qq")
             return
 
         if not self._validate_qq(group_id):
+            logger.debug(f"[util] group_id:{group_id}")
             yield event.plain_result("请输入正确的group_id")
             return
 
