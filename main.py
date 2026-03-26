@@ -580,6 +580,7 @@ class util(Star):
             "(": ")",
             "\uff08": "\uff09",
             "\u3010": "\u3011",
+            "\u300c": "\u300d",
             "{": "}",
             "\u300a": "\u300b",
             "<": ">",
@@ -628,6 +629,7 @@ class util(Star):
         text = re.sub(r"^\s*>\s?", "", text, flags=re.MULTILINE)
         text = re.sub(r"^\s*[-*+]\s+", "", text, flags=re.MULTILINE)
         text = re.sub(r"^\s*\d+\.\s+", "", text, flags=re.MULTILINE)
+        text = re.sub(r"(?m)^\s*(?:---+|\*\*\*+|___+)\s*$", "", text)
         text = re.sub(r"(?<!\*)\*\*(.*?)\*\*(?!\*)", r"\1", text)
         text = re.sub(r"(?<!_)__(.*?)__(?!_)", r"\1", text)
         text = re.sub(r"(?<!\*)\*(.*?)\*(?!\*)", r"\1", text)
@@ -644,10 +646,14 @@ class util(Star):
         punctuation_only_pattern = re.compile(
             r"^[\s\.,\uFF0C\u3002\uFF01\uFF1F\uFF1B\uFF1A\u3001\u2026~]+$"
         )
+        markdown_only_pattern = re.compile(r"^\s*(?:[-*_`~#>\|]+\s*)+$")
 
         for line in lines:
             line = line.strip()
             if not line:
+                continue
+
+            if markdown_only_pattern.fullmatch(line):
                 continue
 
             if punctuation_only_pattern.fullmatch(line):
