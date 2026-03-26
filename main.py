@@ -44,10 +44,10 @@ class util(Star):
         self.mahjong_interface_url = config.get("mahjong_interface_url", None)
         if self.mahjong_interface_url:
             self.client = ApiClient(self.mahjong_interface_url)
-            logger.info(f"[util] 已使用:{self.mahjong_interface_url},作为麻将接口")
+            logger.info(f"[util] 已使用:{self.mahjong_interface_url}作为麻将接口")
         else:
             self.client = None
-            logger.info(f"[util] 未配置麻将接口请使用 /mj seturl [url] 设置")
+            logger.info(f"[util] 未配置麻将接口，请使用 /mj seturl [url] 设置")
 
         # 麻将数据轮询定时器相关属性
         self._mj_poll_task: asyncio.Task | None = None
@@ -163,14 +163,14 @@ class util(Star):
         target_id = raw_message.get("target_id", None)
         group_id = raw_message.get("group_id", None)
         if (
-            not bot_id
-            or not sender_id
-            or not target_id
-            or str(target_id) != str(bot_id)
+                not bot_id
+                or not sender_id
+                or not target_id
+                or str(target_id) != str(bot_id)
         ):
             return
         text = await self.weighted_random_choice(self.poke_responses, self.poke_weights)
-        logger.info(f"检测到戳一戳,期望发送text:{text}")
+        logger.info(f"检测到戳一戳，期望发送文本:{text}")
         if text == "pack":
             payloads = {"user_id": sender_id}
             if group_id:
@@ -180,7 +180,7 @@ class util(Star):
                 text = await self.weighted_random_choice(
                     self.poke_responses[:-1], self.poke_weights[:-1]
                 )
-                logger.info(f"bot不是AIOCQHTTP,期望发送text:{text}")
+                logger.info(f"机器人不是AIOCQHTTP，期望发送文本:{text}")
                 yield event.plain_result(text)
             else:
                 await bot.api.call_action("send_poke", **payloads)
@@ -189,7 +189,7 @@ class util(Star):
 
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
     async def replyMessage(self, event: AiocqhttpMessageEvent):
-        """获取所有消息,进行贴表情"""
+        """获取所有消息，进行贴表情"""
         raw_message = getattr(event.message_obj, "raw_message", None)
         message_id = raw_message.get("message_id", None)
         text = raw_message.get("raw_message", None)
@@ -216,8 +216,8 @@ class util(Star):
 
         # 遍历所有消息事件处理器
         for handler in star_handlers_registry.get_handlers_by_event_type(
-            EventType.AdapterMessageEvent,
-            plugins_name=None,  # None表示获取所有插件，不进行过滤
+                EventType.AdapterMessageEvent,
+                plugins_name=None,  # None表示获取所有插件，不进行过滤
         ):
             # 创建一个字典来存储所有属性
             handler_info = {}
@@ -254,12 +254,12 @@ class util(Star):
 
             output_text.append(str(handler_info))
             event_output_text.append(str(handler_info_by_event))
-        logger.info(chr(10).join(output_text))
-        yield event.plain_result(chr(10).join(event_output_text))
+        logger.info("\n".join(output_text))
+        yield event.plain_result("\n".join(event_output_text))
 
     @lishi.command("hibmp")
     async def get_handler_by_mp(
-        self, event: AstrMessageEvent, handler_module_path: str
+            self, event: AstrMessageEvent, handler_module_path: str
     ):
         """根据插件路径获取所有插件"""
         if handler_module_path is None:
@@ -336,7 +336,7 @@ class util(Star):
 
             logger.info(f"对话标题: {conv.platform_id}")
             logger.info(f"对话创建时间: {conv.created_at}")
-            # logger.info(f"history:{json.dumps(history, indent=4, ensure_ascii=False)}")
+            # logger.info(f"历史记录:{json.dumps(history, indent=4, ensure_ascii=False)}")
         else:
             print("对话不存在")
 
@@ -351,16 +351,16 @@ class util(Star):
         if bot is None:
             return
         if is_group:
-            logger.info("[util] 进行get_group_msg_history")
+            logger.info("[util] 进行获取群消息历史")
             """
             获取群消息历史记录
             终结点：/get_group_msg_history
-            
+
             参数
             字段	类型	说明
             message_seq	int64	起始消息序号, 可通过 get_msg 获得
             group_id	int64	群号
-            
+
             响应数据
             字段	类型	说明
             messages	Message[]	从起始序号开始的前19条消息
@@ -372,19 +372,19 @@ class util(Star):
                 ensure_ascii=False,
             )
             logger.info(output_text)
-            yield event.plain_result("已获取,打印到日志")
+            yield event.plain_result("已获取，打印到日志")
         else:
-            logger.info("[util] 进行get_friend_msg_history")
+            logger.info("[util] 进行获取私聊消息历史")
             """
             get_friend_msg_history - 获取私聊历史记录 normal
-            
+
             参数
             字段名	数据类型	默认值	说明
             user_id	string	-	QQ 号
             message_seq	string	'0'	起始信息
             count	number	20	数量
             reverseOrder	boolean	false	倒序
-            
+
             响应数据
             字段名	数据类型	说明
             messages	message[]	消息数组,参考 onebot11
@@ -396,12 +396,12 @@ class util(Star):
                 ensure_ascii=False,
             )
             logger.info(output_text)
-            yield event.plain_result("已获取,打印到日志")
+            yield event.plain_result("已获取，打印到日志")
 
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
     @lishi.command("chbf")
     async def get_chat_history_by_bot_by_sender_id(
-        self, event: AiocqhttpMessageEvent, sender_id: str
+            self, event: AiocqhttpMessageEvent, sender_id: str
     ):
         """通过qq号获取消息"""
         if not self._validate_qq(sender_id):
@@ -417,12 +417,12 @@ class util(Star):
             ensure_ascii=False,
         )
         logger.info(output_text)
-        yield event.plain_result("已获取,打印到日志")
+        yield event.plain_result("已获取，打印到日志")
 
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
     @lishi.command("chbg")
     async def get_chat_history_by_bot_by_group_id(
-        self, event: AiocqhttpMessageEvent, group_id: str
+            self, event: AiocqhttpMessageEvent, group_id: str
     ):
         """通过群聊号获取消息"""
         if not self._validate_qq(group_id):
@@ -438,14 +438,14 @@ class util(Star):
             ensure_ascii=False,
         )
         logger.info(output_text)
-        yield event.plain_result("已获取,打印到日志")
+        yield event.plain_result("已获取，打印到日志")
 
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
     @lishi.command("chbgpn")
     async def get_chat_history_by_bot_process(
-        self, event: AiocqhttpMessageEvent, group_id: str, count: int
+            self, event: AiocqhttpMessageEvent, group_id: str, count: int
     ):
-        """通过群聊号获取消息并且处"""
+        """通过群聊号获取消息并处理"""
         raw_message = getattr(event.message_obj, "raw_message", None)
         if not self._validate_qq(group_id):
             yield event.plain_result("请输入正确的id")
@@ -474,24 +474,24 @@ class util(Star):
             if not (entitie["type"] in text_tag):
                 text_tag.append(entitie["type"])
         text_tag = text_tag[: self.max_role_doct]
-        logger.info(f"[text_tag]: {text_tag}")
+        logger.info(f"[文本标签]: {text_tag}")
         if len(text_tag) > 0:
-            logger.info(f"[text_tag]: {text_tag}")
-            My_prompt = f"The following are role documents that may be used:\n"
+            logger.info(f"[文本标签]: {text_tag}")
+            My_prompt = f"以下是可能使用的角色文档：\n"
             for name in text_tag:
                 file_name = self.role_file_mapping.get(name, None)
                 file_path = os.path.join(
                     self.data_dir, os.path.join("./entity", file_name)
                 )
-                logger.info(f"file_name:{file_name},file_path:{file_path}")
+                logger.info(f"文件名:{file_name},文件路径:{file_path}")
                 if not file_name is None and os.path.exists(file_path):
                     with open(file_path, "r") as f:
                         My_prompt += f"{f.read()}\n" + "-" * 10 + "\n"
                 else:
                     logger.info("获取文件失败")
-                    logger.info(f"file_name:{file_name}")
-                    logger.info(f"file_path:{file_path}")
-                    logger.info(f"对于:{text},识别到:{text_tag}")
+                    logger.info(f"文件名:{file_name}")
+                    logger.info(f"文件路径:{file_path}")
+                    logger.info(f"对于文本:{text},识别到:{text_tag}")
             if self.is_debug:
                 logger.info(f"注入提示词:\n{My_prompt}")
             request.system_prompt += My_prompt
@@ -499,17 +499,17 @@ class util(Star):
                 logger.info(f"注入后的系统提示词:\n{request.system_prompt}")
         else:
             if self.is_debug:
-                logger.info(f"对于:{text},识别到:{text_tag}")
+                logger.info(f"对于文本:{text},识别到:{text_tag}")
 
     @lishi.command("gin")
     async def get_info_number(
-        self, event: AiocqhttpMessageEvent, qq: str, group_id: str | None = None
+            self, event: AiocqhttpMessageEvent, qq: str, group_id: str | None = None
     ):
         """获取一个群聊qq账号信息"""
         if group_id is None:
             group_id = event.get_group_id()
             if group_id is None:
-                yield event.plain_result("请在群聊里面使用,或输入group_id")
+                yield event.plain_result("请在群聊里面使用，或输入group_id")
                 return
         else:
             group_id = str(group_id)
@@ -520,7 +520,7 @@ class util(Star):
             return
 
         if not self._validate_qq(group_id):
-            logger.debug(f"[util] group_id:{group_id}")
+            logger.debug(f"[util] 群组ID:{group_id}")
             yield event.plain_result("请输入正确的group_id")
             return
 
@@ -542,8 +542,16 @@ class util(Star):
         """LLM返回后对返回的消息进行处理"""
         if self.is_debug:
             logger.debug(f'[util] 开始处理:{req.completion_text}')
+        if self.is_debug:
+            logger.info(f"[util] 原始LLM响应:\n{req.completion_text}")
         output_lines = self._smart_split_text(req.completion_text)
+        if self.is_debug:
+            logger.info(
+                f"[util] 智能分割完成，行数={len(output_lines)}, 行内容={json.dumps(output_lines, ensure_ascii=False)}"
+            )
         for line in output_lines:
+            if self.is_debug:
+                logger.info(f"[util] 发送分割后的行: {line}")
             await event.send(event.plain_result(line))
         event.stop_event()
 
@@ -569,9 +577,13 @@ class util(Star):
         return outpur_text, message_id
 
     def _smart_split_text(self, text: str) -> list[str]:
-        """Clean LLM output and split it into natural lines."""
+        """清理LLM输出并将其分割成自然行"""
         cleaned_text = self._strip_llm_markdown(text)
+        if self.is_debug:
+            logger.info(f"[util] 清理后的文本:\n{cleaned_text}")
         if not cleaned_text:
+            if self.is_debug:
+                logger.info("[util] 清理后的文本为空，跳过发送")
             return []
 
         lines: list[str] = []
@@ -615,11 +627,18 @@ class util(Star):
         if tail:
             lines.append(tail)
 
+        if self.is_debug:
+            logger.info(
+                f"[util] 规范化前分割，行数={len(lines)}, 行内容={json.dumps(lines, ensure_ascii=False)}"
+            )
+
         return self._normalize_output_lines(lines)
 
     def _strip_llm_markdown(self, text: str) -> str:
-        """Remove common markdown wrappers from LLM output while keeping readable text."""
+        """从LLM输出中移除常见的markdown包装，同时保留可读文本"""
         if not text:
+            if self.is_debug:
+                logger.info("[util] 在markdown清理前收到空文本")
             return ""
 
         text = text.replace("\r\n", "\n").replace("\r", "\n").strip()
@@ -643,7 +662,7 @@ class util(Star):
         return text.strip()
 
     def _normalize_output_lines(self, lines: list[str]) -> list[str]:
-        """Drop empty fragments and avoid punctuation-only lines."""
+        """丢弃空片段并避免只有标点的行"""
         normalized_lines: list[str] = []
         punctuation_only_pattern = re.compile(
             r"^[\s\.,\uFF0C\u3002\uFF01\uFF1F\uFF1B\uFF1A\u3001\u2026~]+$"
@@ -653,22 +672,43 @@ class util(Star):
         for line in lines:
             line = line.strip()
             if not line:
+                if self.is_debug:
+                    logger.info("[util] 跳过空分割行")
                 continue
 
             if markdown_only_pattern.fullmatch(line):
+                if self.is_debug:
+                    logger.info(f"[util] 跳过仅markdown行: {line}")
                 continue
 
             if punctuation_only_pattern.fullmatch(line):
                 if normalized_lines:
                     normalized_lines[-1] += line
+                    if self.is_debug:
+                        logger.info(
+                            f"[util] 将仅标点行合并到前一行: {line}"
+                        )
+                elif self.is_debug:
+                    logger.info(
+                        f"[util] 丢弃没有接收者的前导仅标点行: {line}"
+                    )
                 continue
 
             normalized_lines.append(line)
 
         while normalized_lines and punctuation_only_pattern.fullmatch(
-            normalized_lines[-1]
+                normalized_lines[-1]
         ):
+            if self.is_debug:
+                logger.info(
+                    f"[util] 丢弃尾部的仅标点行: {normalized_lines[-1]}"
+                )
             normalized_lines.pop()
+
+        if self.is_debug:
+            logger.info(
+                f"[util] 规范化完成，行数={len(normalized_lines)}, 行内容={json.dumps(normalized_lines, ensure_ascii=False)}"
+            )
 
         return normalized_lines
 
