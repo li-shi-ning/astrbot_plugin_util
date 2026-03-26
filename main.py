@@ -540,6 +540,7 @@ class util(Star):
     @filter.on_llm_response()
     async def on_llm_response(self, event: AstrMessageEvent, req: LLMResponse):
         """LLM返回后对返回的消息进行处理"""
+        logger.debug(f'[util] 开始处理:{req.completion_text}')
         output_lines = self._smart_split_text(req.completion_text)
         for line in output_lines:
             await event.send(event.plain_result(line))
