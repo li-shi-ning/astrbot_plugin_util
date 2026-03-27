@@ -1,29 +1,27 @@
 # ====== 核心模块 ======
-from astrbot.core.config import AstrBotConfig
+from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import AiocqhttpMessageEvent
 from astrbot.core.star.star_handler import EventType, star_handlers_registry
-from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
-    AiocqhttpMessageEvent,
-)
-from astrbot.core.star.star import star_map
-from astrbot.core.agent.tool import FunctionTool
 from astrbot.core.message.message_event_result import MessageChain
 from astrbot.api.provider import ProviderRequest, LLMResponse
+from astrbot.core.agent.tool import FunctionTool
+from astrbot.core.config import AstrBotConfig
+from astrbot.core.star.star import star_map
 
 # ====== API 模块 ======
-from astrbot.api import logger
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register
-from astrbot.api.star import StarTools
 from astrbot.api.provider import ProviderRequest
+from astrbot.api.star import StarTools
+from astrbot.api import logger
 
 # ====== 第三方库 ======
+from mcp.types import CallToolResult
 import numpy as np
+import asyncio
 import random
 import json
 import os
-import asyncio
 import re
-from mcp.types import CallToolResult
 
 # ====== 核心库 ======
 from .core.ChineseEntityExtractor import ChineseEntityExtractor
