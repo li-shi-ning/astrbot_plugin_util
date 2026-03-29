@@ -793,15 +793,14 @@ class util(Star):
     def extract_and_sanitize_input(self, text: str, keyword: str) -> str:
         if not text or not keyword:
             return ""
-        # 使用正则表达式提取关键词后的内容
         pattern = rf'{re.escape(keyword)}\s*(.*)'
         match = re.search(pattern, text)
         if not match:
             return ""
         user_input = match.group(1).strip()
-        # 清理特殊字符
-        cleaned = re.sub(r'[^\u4e00-\u9fa5a-zA-Z0-9\s]', '', user_input)
-        # 限制长度
-        if len(cleaned) > 50:
-            cleaned = cleaned[:50]
-        return cleaned
+
+        # 不清理，只做长度限制
+        if len(user_input) > 200:
+            user_input = user_input[:200]
+
+        return user_input
