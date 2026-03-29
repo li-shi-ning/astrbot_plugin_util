@@ -504,7 +504,9 @@ class util(Star):
     # 自建tts服务
     @filter.command("t2s")
     async def use_tts(self, event: AiocqhttpMessageEvent):
+        logger.debug(f"[utrl] event.message_str:{event.message_str}")
         guess_text = self.extract_and_sanitize_input(event.message_str, "t2s")
+        logger.debug(f"[utrl] guess_text:{guess_text}")
         payload = {
             "text": guess_text,
             "reference_id": "a9a59749-1904-4136-a409-5e4aea7d4e0d",
