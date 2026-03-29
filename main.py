@@ -522,6 +522,7 @@ class util(Star):
         except Exception as e:
             logger.error(f"[utrl] e:{e}")
             logger.error(traceback.format_exc())
+            logger.error(f"[utrl] payload:{payload}")
             data = {}
         audio_url = data.get("audio_url", None)
         if audio_url is None:
