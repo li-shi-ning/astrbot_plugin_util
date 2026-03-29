@@ -1,4 +1,6 @@
 # ====== 核心模块 ======
+from datetime import datetime
+
 from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import AiocqhttpMessageEvent
 from astrbot.core.star.star_handler import EventType, star_handlers_registry
 from astrbot.core.message.message_event_result import MessageChain
@@ -6,6 +8,7 @@ from astrbot.api.provider import ProviderRequest, LLMResponse
 from astrbot.core.agent.tool import FunctionTool
 from astrbot.core.config import AstrBotConfig
 from astrbot.core.star.star import star_map
+import astrbot.api.message_components as Comp
 
 # ====== API 模块 ======
 from astrbot.api.event import filter, AstrMessageEvent
@@ -17,7 +20,9 @@ from astrbot.api import logger
 # ====== 第三方库 ======
 from mcp.types import CallToolResult
 import numpy as np
+import traceback
 import asyncio
+import aiohttp
 import random
 import json
 import os
@@ -462,6 +467,74 @@ class util(Star):
         self.is_debug = set_bool == 1
         yield event.plain_result(f"设置debug:{self.is_debug}")
 
+    @lishi.command("gin")
+    async def get_info_number(
+            self, event: AiocqhttpMessageEvent, qq: str, group_id: str | None = None
+    ):
+        """获取一个群聊qq账号信息"""
+        if group_id is None:
+            group_id = event.get_group_id()
+            if group_id is None:
+                yield event.plain_result("请在群聊里面使用，或输入group_id")
+                return
+        else:
+            group_id = str(group_id)
+            group_id = group_id.strip()
+
+        if not self._validate_qq(qq):
+            yield event.plain_result("请输入正确的qq")
+            return
+
+        if not self._validate_qq(group_id):
+            logger.debug(f"[util] 群组ID:{group_id}")
+            yield event.plain_result("请输入正确的group_id")
+            return
+
+        bot = getattr(event, "bot", None)
+        if bot is None:
+            return
+
+        if not self._validate_qq(qq):
+            yield event.plain_result("QQ号格式错误，请使用纯数字")
+            return
+
+        payloads = {"group_id": int(group_id), "user_id": int(qq), "no_cache": True}
+        qq_info = await bot.api.call_action("get_group_member_info", **payloads)
+        logger.info(json.dumps(qq_info, indent=2, ensure_ascii=False))
+        yield event.plain_result(json.dumps(qq_info))
+
+    # 自建tts服务
+    @filter.command("t2s")
+    async def use_tts(self, event: AiocqhttpMessageEvent):
+        guess_text = self.extract_and_sanitize_input(event.message_str, "t2s")
+        payload = {
+            "text": guess_text,
+            "reference_id": "a9a59749-1904-4136-a409-5e4aea7d4e0d",
+            "language": "Japanese"
+        }
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"https://tts.lishining.top/generate",
+                    json=payload,
+                    timeout=600,
+                ) as resp:
+                    resp.raise_for_status()
+                    data = await resp.json()
+        except Exception as e:
+            logger.error(f"[utrl] e:{e}")
+            logger.error(traceback.format_exc())
+            data = {}
+        audio_url = data.get("audio_url", None)
+        if audio_url is None:
+            yield event.plain_result("服务器错误,请稍后再试")
+            logger.error(f"[util] 发送失败,data:{data}")
+            return
+        chain = [
+            Comp.Record.fromURL(str(audio_url)),
+        ]
+        yield event.chain_result(chain)
+
     @filter.on_llm_request(priority=49)
     async def add_doct(self, event: AstrMessageEvent, request: ProviderRequest):
         """通过关键词识别进行的动态文档载入"""
@@ -498,42 +571,6 @@ class util(Star):
         else:
             if self.is_debug:
                 logger.info(f"对于文本:{text},识别到:{text_tag}")
-
-    @lishi.command("gin")
-    async def get_info_number(
-            self, event: AiocqhttpMessageEvent, qq: str, group_id: str | None = None
-    ):
-        """获取一个群聊qq账号信息"""
-        if group_id is None:
-            group_id = event.get_group_id()
-            if group_id is None:
-                yield event.plain_result("请在群聊里面使用，或输入group_id")
-                return
-        else:
-            group_id = str(group_id)
-            group_id = group_id.strip()
-
-        if not self._validate_qq(qq):
-            yield event.plain_result("请输入正确的qq")
-            return
-
-        if not self._validate_qq(group_id):
-            logger.debug(f"[util] 群组ID:{group_id}")
-            yield event.plain_result("请输入正确的group_id")
-            return
-
-        bot = getattr(event, "bot", None)
-        if bot is None:
-            return
-
-        if not self._validate_qq(qq):
-            yield event.plain_result("QQ号格式错误，请使用纯数字")
-            return
-
-        payloads = {"group_id": int(group_id), "user_id": int(qq), "no_cache": True}
-        qq_info = await bot.api.call_action("get_group_member_info", **payloads)
-        logger.info(json.dumps(qq_info, indent=2, ensure_ascii=False))
-        yield event.plain_result(json.dumps(qq_info))
 
     @filter.on_llm_response()
     async def on_llm_response(self, event: AstrMessageEvent, req: LLMResponse):
@@ -751,3 +788,19 @@ class util(Star):
             probs = weights_arr / weights_arr.sum()
             idx = np.random.choice(len(elements), p=probs)
         return elements[idx] if not isinstance(elements, np.ndarray) else elements[idx]
+
+    def extract_and_sanitize_input(self, text: str, keyword: str) -> str:
+        if not text or not keyword:
+            return ""
+        # 使用正则表达式提取关键词后的内容
+        pattern = rf'{re.escape(keyword)}\s*(.*)'
+        match = re.search(pattern, text)
+        if not match:
+            return ""
+        user_input = match.group(1).strip()
+        # 清理特殊字符
+        cleaned = re.sub(r'[^\u4e00-\u9fa5a-zA-Z0-9\s]', '', user_input)
+        # 限制长度
+        if len(cleaned) > 50:
+            cleaned = cleaned[:50]
+        return cleaned
