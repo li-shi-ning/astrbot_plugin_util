@@ -1,14 +1,12 @@
 # ====== 核心模块 ======
-from datetime import datetime
-
 from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import AiocqhttpMessageEvent
 from astrbot.core.star.star_handler import EventType, star_handlers_registry
 from astrbot.core.message.message_event_result import MessageChain
 from astrbot.api.provider import ProviderRequest, LLMResponse
 from astrbot.core.agent.tool import FunctionTool
 from astrbot.core.config import AstrBotConfig
-from astrbot.core.star.star import star_map
 import astrbot.api.message_components as Comp
+from astrbot.core.star.star import star_map
 
 # ====== API 模块 ======
 from astrbot.api.event import filter, AstrMessageEvent
