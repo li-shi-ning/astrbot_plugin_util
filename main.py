@@ -154,6 +154,11 @@ class util(Star):
             "无聊": [8, 25, 285, 293],
         }
 
+        self.tts_id = {
+            "ema":"486bd7ee-a273-4e3d-a02a-e0dfc880cbe2",
+            "hiro":"a9a59749-1904-4136-a409-5e4aea7d4e0d",
+        }
+
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
     @register_pack_type()
     async def poke(self, event: AiocqhttpMessageEvent):
@@ -509,7 +514,41 @@ class util(Star):
         logger.debug(f"[utrl] guess_text:{guess_text}")
         payload = {
             "text": guess_text,
-            "reference_id": "a9a59749-1904-4136-a409-5e4aea7d4e0d",
+            "reference_id": self.tts_id["hiro"],
+            "language": "Japanese"
+        }
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"https://tts.lishining.top/generate",
+                    json=payload,
+                    timeout=600,
+                ) as resp:
+                    resp.raise_for_status()
+                    data = await resp.json()
+        except Exception as e:
+            logger.error(f"[utrl] e:{e}")
+            logger.error(traceback.format_exc())
+            logger.error(f"[utrl] payload:{payload}")
+            data = {}
+        audio_url = data.get("audio_url", None)
+        if audio_url is None:
+            yield event.plain_result("服务器错误,请稍后再试")
+            logger.error(f"[util] 发送失败,data:{data}")
+            return
+        chain = [
+            Comp.Record.fromURL(str(audio_url)),
+        ]
+        yield event.chain_result(chain)
+
+    @filter.command("et2s")
+    async def use_etts(self, event: AiocqhttpMessageEvent):
+        logger.debug(f"[utrl] event.message_str:{event.message_str}")
+        guess_text = self.extract_and_sanitize_input(event.message_str, "t2s")
+        logger.debug(f"[utrl] guess_text:{guess_text}")
+        payload = {
+            "text": guess_text,
+            "reference_id": self.tts_id["ema"],
             "language": "Japanese"
         }
         try:
