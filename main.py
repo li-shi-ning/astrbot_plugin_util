@@ -43,7 +43,6 @@ class util(Star):
                 "别用这种方式交流。",
                 "我在听。你可以说了。",
                 "先说明目的。",
-
                 # 轻微不耐烦
                 "（微微后退）这种举动不合适。",
                 "你太轻率了。收敛一点。",
@@ -51,7 +50,6 @@ class util(Star):
                 "（整理衣襟）距离感也是秩序的一部分。",
                 "少用动作试探。用话说清楚。",
                 "如果你很迷茫，就直接问。别乱碰。",
-
                 # 高压态
                 "手拿开。现在。",
                 "先想清楚你在做什么。",
@@ -60,7 +58,6 @@ class util(Star):
                 "你的判断有问题。立刻修正。",
                 "再碰一次，我会默认你在挑衅。",
                 "先停下。然后解释你的目的。",
-
                 # 保留项
                 "喵~",
                 "哈!",
@@ -77,7 +74,6 @@ class util(Star):
                 7.2,
                 6.5,
                 7.0,
-
                 # 轻微不耐烦
                 8.8,
                 9.2,
@@ -85,7 +81,6 @@ class util(Star):
                 8.3,
                 7.8,
                 7.2,
-
                 # 高压态
                 8.5,
                 8.8,
@@ -94,7 +89,6 @@ class util(Star):
                 9.2,
                 8.4,
                 8.7,
-
                 # 保留项
                 5.0,  # 喵
                 6.0,  # 哈气
@@ -139,6 +133,7 @@ class util(Star):
             "ema": "486bd7ee-a273-4e3d-a02a-e0dfc880cbe2",
             "hiro": "a9a59749-1904-4136-a409-5e4aea7d4e0d",
         }
+        self.no_split_keywords = ("zssm", "这是什么", "hyw", "何意味")
 
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
     @register_pack_type()
@@ -562,6 +557,12 @@ class util(Star):
             logger.debug(f"[util] 开始处理:{req.completion_text}")
         if self.is_debug:
             logger.info(f"[util] 原始LLM响应:\n{req.completion_text}")
+        if self._should_skip_llm_split(event.message_str):
+            if self.is_debug:
+                logger.info(
+                    f"[util] 命中免切割关键词，跳过输出切割: {event.message_str}"
+                )
+            return
         output_lines = self._smart_split_text(req.completion_text)
         if self.is_debug:
             logger.info(
@@ -723,6 +724,12 @@ class util(Star):
             )
 
         return normalized_lines
+
+    def _should_skip_llm_split(self, text: str | None) -> bool:
+        if not text:
+            return False
+        normalized_text = text.lower()
+        return any(keyword in normalized_text for keyword in self.no_split_keywords)
 
     def _validate_qq(self, qq):
         """验证QQ号是否合法（只包含数字）"""
