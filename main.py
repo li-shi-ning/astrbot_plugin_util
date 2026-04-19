@@ -1,35 +1,30 @@
 # ====== 核心模块 ======
-from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import AiocqhttpMessageEvent
-from astrbot.core.star.star_handler import EventType, star_handlers_registry
-from astrbot.core.message.message_event_result import MessageChain
-from astrbot.api.provider import ProviderRequest, LLMResponse
-from astrbot.core.agent.tool import FunctionTool
-from astrbot.core.config import AstrBotConfig
-import astrbot.api.message_components as Comp
-from astrbot.core.star.star import star_map
+import json
+import random
+import re
+import traceback
 
-# ====== API 模块 ======
-from astrbot.api.event import filter, AstrMessageEvent
-from astrbot.api.star import Context, Star, register
-from astrbot.api.provider import ProviderRequest
-from astrbot.api.star import StarTools
-from astrbot.api import logger
+import aiohttp
 
 # ====== 第三方库 ======
-from mcp.types import CallToolResult
 import numpy as np
-import traceback
-import asyncio
-import aiohttp
-import random
-import json
-import os
-import re
+
+import astrbot.api.message_components as Comp
+from astrbot.api import logger
+
+# ====== API 模块 ======
+from astrbot.api.event import AstrMessageEvent, filter
+from astrbot.api.provider import LLMResponse
+from astrbot.api.star import Context, Star, register
+from astrbot.core.config import AstrBotConfig
+from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
+    AiocqhttpMessageEvent,
+)
+from astrbot.core.star.star import star_map
+from astrbot.core.star.star_handler import EventType, star_handlers_registry
 
 # ====== 核心库 ======
-from .core.ChineseEntityExtractor import ChineseEntityExtractor
 from .core.Filter import register_pack_type
-from .core.api_client import ApiClient
 
 
 @register("util", "lishinig", "私人插件", "1.0.0")
@@ -38,65 +33,35 @@ class util(Star):
         super().__init__(context)
 
         self.config = config
-        self.data_dir = self.config.get("data_dir", None)
-        self.max_role_doct = self.config.get("max_role_doct", 3)
-        self.role_file_mapping = {}
         self.is_debug = False
-        self.mahjong_interface_url = config.get("mahjong_interface_url", None)
-        if self.mahjong_interface_url:
-            self.client = ApiClient(self.mahjong_interface_url)
-            logger.info(f"[util] 已使用:{self.mahjong_interface_url}作为麻将接口")
-        else:
-            self.client = None
-            logger.info(f"[util] 未配置麻将接口，请使用 /mj seturl [url] 设置")
-
-        # 麻将数据轮询定时器相关属性
-        self._mj_poll_task: asyncio.Task | None = None
-        self._mj_poll_interval: float = config.get("mj_poll_interval", 5.0)
-        self.mj_game_info: dict | None = None  # 存储最新游戏信息
-        self.mj_ai_guide: dict | None = None  # 存储最新 AI 指导信息
-        if self.data_dir is None:
-            self.data_dir = StarTools.get_data_dir()
-            self.data_dir_entity = os.path.join(self.data_dir, "entity")
-            logger.error("数据加载失败")
-            self.chineseentityextractor = ChineseEntityExtractor(
-                chinese_ratio_threshold=0.2
-            )
-        else:
-            self.data_dir_entity = os.path.join(self.data_dir, "entity")
-            self.chineseentityextractor = ChineseEntityExtractor(
-                user_dict_path=os.path.join(self.data_dir, "entity_dict.txt"),
-                chinese_ratio_threshold=0.2,
-            )
-            self.role_file_mapping = {
-                "mnsp_hiro": "hiro.txt",
-                "mnsp_miria": "miria.txt",
-                "mnsp_meruru": "meruru.txt",
-                "mnsp_noa": "noa.txt",
-                "mnsp_anan": "anan.txt",
-                "mnsp_maago": "maago.txt",
-                "mnsp_yuki": "yuki.txt",
-                "mnsp_ema": "ema.txt",
-                "mnsp_sherii": "sherii.txt",
-                "mnsp_koko": "koko.txt",
-                "mnsp_arisa": "arisa.txt",
-                "mnsp_reia": "reia.txt",
-                "mnsp_hanna": "hanna.txt",
-                "mnsp_nanoka": "nanoka.txt",
-            }
-
         self.poke_responses = np.array(
             [
-                "请勿随意触碰。作为向导，我建议你保持适当的距离。",
-                "（微微后退一步）这种接触并不符合'正确'的社交礼仪。",
-                "你寻求我的注意吗？那么，请用言语而非动作表达。",
-                "在里账号迷宫中，每个动作都应有其意义。你的目的是？",
-                "（冷静注视）你的行为暴露了轻率。这需要修正。",
-                "我仍在引导你。但触碰，并非必要的交流方式。",
-                "若你感到迷茫，我可以指引。但请停止无意义的动作。",
-                "（整理衣襟）秩序，体现在每一个细节中。包括适当的距离。",
-                "你的行为，与迷宫的混沌同样需要被净化。",
-                "触碰无法触及真理。让我们用理性的对话代替。",
+                # 正常态
+                "别碰我。保持距离。",
+                "想引起我的注意，就开口。",
+                "如果有事，直接说。",
+                "别用这种方式交流。",
+                "我在听。你可以说了。",
+                "先说明目的。",
+
+                # 轻微不耐烦
+                "（微微后退）这种举动不合适。",
+                "你太轻率了。收敛一点。",
+                "我会继续引导你，但别再碰我。",
+                "（整理衣襟）距离感也是秩序的一部分。",
+                "少用动作试探。用话说清楚。",
+                "如果你很迷茫，就直接问。别乱碰。",
+
+                # 高压态
+                "手拿开。现在。",
+                "先想清楚你在做什么。",
+                "这种行为只会让场面更混乱。",
+                "别让我重复。停止这种动作。",
+                "你的判断有问题。立刻修正。",
+                "再碰一次，我会默认你在挑衅。",
+                "先停下。然后解释你的目的。",
+
+                # 保留项
                 "喵~",
                 "哈!",
                 "pack",
@@ -105,16 +70,32 @@ class util(Star):
 
         self.poke_weights = np.array(
             [
-                8.0,  # 礼仪纠正
-                9.5,  # 评判纠正（最高）
-                7.0,  # 引导交流
-                8.5,  # 质询目的
-                9.0,  # 行为修正
-                7.5,  # 引导职责
-                6.5,  # 提供指引
-                8.0,  # 秩序强调
-                8.5,  # 净化理念
-                7.0,  # 理性倡导
+                # 正常态
+                7.5,
+                7.0,
+                6.8,
+                7.2,
+                6.5,
+                7.0,
+
+                # 轻微不耐烦
+                8.8,
+                9.2,
+                8.0,
+                8.3,
+                7.8,
+                7.2,
+
+                # 高压态
+                8.5,
+                8.8,
+                8.6,
+                9.0,
+                9.2,
+                8.4,
+                8.7,
+
+                # 保留项
                 5.0,  # 喵
                 6.0,  # 哈气
                 10.0,  # 反弹
@@ -155,8 +136,8 @@ class util(Star):
         }
 
         self.tts_id = {
-            "ema":"486bd7ee-a273-4e3d-a02a-e0dfc880cbe2",
-            "hiro":"a9a59749-1904-4136-a409-5e4aea7d4e0d",
+            "ema": "486bd7ee-a273-4e3d-a02a-e0dfc880cbe2",
+            "hiro": "a9a59749-1904-4136-a409-5e4aea7d4e0d",
         }
 
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
@@ -169,10 +150,10 @@ class util(Star):
         target_id = raw_message.get("target_id", None)
         group_id = raw_message.get("group_id", None)
         if (
-                not bot_id
-                or not sender_id
-                or not target_id
-                or str(target_id) != str(bot_id)
+            not bot_id
+            or not sender_id
+            or not target_id
+            or str(target_id) != str(bot_id)
         ):
             return
         text = await self.weighted_random_choice(self.poke_responses, self.poke_weights)
@@ -222,8 +203,8 @@ class util(Star):
 
         # 遍历所有消息事件处理器
         for handler in star_handlers_registry.get_handlers_by_event_type(
-                EventType.AdapterMessageEvent,
-                plugins_name=None,  # None表示获取所有插件，不进行过滤
+            EventType.AdapterMessageEvent,
+            plugins_name=None,  # None表示获取所有插件，不进行过滤
         ):
             # 创建一个字典来存储所有属性
             handler_info = {}
@@ -265,7 +246,7 @@ class util(Star):
 
     @lishi.command("hibmp")
     async def get_handler_by_mp(
-            self, event: AstrMessageEvent, handler_module_path: str
+        self, event: AstrMessageEvent, handler_module_path: str
     ):
         """根据插件路径获取所有插件"""
         if handler_module_path is None:
@@ -352,7 +333,7 @@ class util(Star):
         """通过onebot接口获取聊天历史"""
         group_id = event.get_group_id()
         sender_id = event.get_sender_id()
-        is_group = not group_id is None
+        is_group = group_id is not None
         bot = getattr(event, "bot", None)
         if bot is None:
             return
@@ -407,7 +388,7 @@ class util(Star):
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
     @lishi.command("chbf")
     async def get_chat_history_by_bot_by_sender_id(
-            self, event: AiocqhttpMessageEvent, sender_id: str
+        self, event: AiocqhttpMessageEvent, sender_id: str
     ):
         """通过qq号获取消息"""
         if not self._validate_qq(sender_id):
@@ -428,7 +409,7 @@ class util(Star):
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
     @lishi.command("chbg")
     async def get_chat_history_by_bot_by_group_id(
-            self, event: AiocqhttpMessageEvent, group_id: str
+        self, event: AiocqhttpMessageEvent, group_id: str
     ):
         """通过群聊号获取消息"""
         if not self._validate_qq(group_id):
@@ -449,10 +430,9 @@ class util(Star):
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
     @lishi.command("chbgpn")
     async def get_chat_history_by_bot_process(
-            self, event: AiocqhttpMessageEvent, group_id: str, count: int
+        self, event: AiocqhttpMessageEvent, group_id: str, count: int
     ):
         """通过群聊号获取消息并处理"""
-        raw_message = getattr(event.message_obj, "raw_message", None)
         if not self._validate_qq(group_id):
             yield event.plain_result("请输入正确的id")
             return
@@ -472,7 +452,7 @@ class util(Star):
 
     @lishi.command("gin")
     async def get_info_number(
-            self, event: AiocqhttpMessageEvent, qq: str, group_id: str | None = None
+        self, event: AiocqhttpMessageEvent, qq: str, group_id: str | None = None
     ):
         """获取一个群聊qq账号信息"""
         if group_id is None:
@@ -515,12 +495,12 @@ class util(Star):
         payload = {
             "text": guess_text,
             "reference_id": self.tts_id["hiro"],
-            "language": "Japanese"
+            "language": "Japanese",
         }
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(
-                    f"https://tts.lishining.top/generate",
+                    "https://tts.lishining.top/generate",
                     json=payload,
                     timeout=600,
                 ) as resp:
@@ -549,12 +529,12 @@ class util(Star):
         payload = {
             "text": guess_text,
             "reference_id": self.tts_id["ema"],
-            "language": "Japanese"
+            "language": "Japanese",
         }
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(
-                    f"https://tts.lishining.top/generate",
+                    "https://tts.lishining.top/generate",
                     json=payload,
                     timeout=600,
                 ) as resp:
@@ -575,48 +555,11 @@ class util(Star):
         ]
         yield event.chain_result(chain)
 
-    @filter.on_llm_request(priority=49)
-    async def add_doct(self, event: AstrMessageEvent, request: ProviderRequest):
-        """通过关键词识别进行的动态文档载入"""
-        text = event.message_str
-        entities = self.chineseentityextractor.extract(text)
-        text_tag = []
-        for entitie in entities:
-            if not (entitie["type"] in text_tag):
-                text_tag.append(entitie["type"])
-        text_tag = text_tag[: self.max_role_doct]
-        logger.info(f"[文本标签]: {text_tag}")
-        if len(text_tag) > 0:
-            logger.info(f"[文本标签]: {text_tag}")
-            My_prompt = f"以下是可能使用的角色文档：\n"
-            for name in text_tag:
-                file_name = self.role_file_mapping.get(name, None)
-                file_path = os.path.join(
-                    self.data_dir, os.path.join("./entity", file_name)
-                )
-                logger.info(f"文件名:{file_name},文件路径:{file_path}")
-                if not file_name is None and os.path.exists(file_path):
-                    with open(file_path, "r") as f:
-                        My_prompt += f"{f.read()}\n" + "-" * 10 + "\n"
-                else:
-                    logger.info("获取文件失败")
-                    logger.info(f"文件名:{file_name}")
-                    logger.info(f"文件路径:{file_path}")
-                    logger.info(f"对于文本:{text},识别到:{text_tag}")
-            if self.is_debug:
-                logger.info(f"注入提示词:\n{My_prompt}")
-            request.system_prompt += My_prompt
-            if self.is_debug:
-                logger.info(f"注入后的系统提示词:\n{request.system_prompt}")
-        else:
-            if self.is_debug:
-                logger.info(f"对于文本:{text},识别到:{text_tag}")
-
     @filter.on_llm_response()
     async def on_llm_response(self, event: AstrMessageEvent, req: LLMResponse):
         """LLM返回后对返回的消息进行处理"""
         if self.is_debug:
-            logger.debug(f'[util] 开始处理:{req.completion_text}')
+            logger.debug(f"[util] 开始处理:{req.completion_text}")
         if self.is_debug:
             logger.info(f"[util] 原始LLM响应:\n{req.completion_text}")
         output_lines = self._smart_split_text(req.completion_text)
@@ -646,7 +589,7 @@ class util(Star):
                 if message_data["type"] == "text":
                     try:
                         outpur_text.append(message_data["data"]["text"])
-                    except:
+                    except (KeyError, TypeError):
                         pass
         message_id = data["messages"][0]["message_id"]
         return outpur_text, message_id
@@ -760,24 +703,18 @@ class util(Star):
                 if normalized_lines:
                     normalized_lines[-1] += line
                     if self.is_debug:
-                        logger.info(
-                            f"[util] 将仅标点行合并到前一行: {line}"
-                        )
+                        logger.info(f"[util] 将仅标点行合并到前一行: {line}")
                 elif self.is_debug:
-                    logger.info(
-                        f"[util] 丢弃没有接收者的前导仅标点行: {line}"
-                    )
+                    logger.info(f"[util] 丢弃没有接收者的前导仅标点行: {line}")
                 continue
 
             normalized_lines.append(line)
 
         while normalized_lines and punctuation_only_pattern.fullmatch(
-                normalized_lines[-1]
+            normalized_lines[-1]
         ):
             if self.is_debug:
-                logger.info(
-                    f"[util] 丢弃尾部的仅标点行: {normalized_lines[-1]}"
-                )
+                logger.info(f"[util] 丢弃尾部的仅标点行: {normalized_lines[-1]}")
             normalized_lines.pop()
 
         if self.is_debug:
@@ -832,7 +769,7 @@ class util(Star):
     def extract_and_sanitize_input(self, text: str, keyword: str) -> str:
         if not text or not keyword:
             return ""
-        pattern = rf'{re.escape(keyword)}\s*(.*)'
+        pattern = rf"{re.escape(keyword)}\s*(.*)"
         match = re.search(pattern, text)
         if not match:
             return ""
