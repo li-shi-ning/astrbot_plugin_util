@@ -1,1 +1,26 @@
-{}
+{
+  "enable_history_message_chunking": {
+    "description": "Enable chunking for long history messages before they are exposed by this plugin.",
+    "type": "bool",
+    "default": true,
+    "hint": "true"
+  },
+  "history_message_chunk_length": {
+    "description": "Maximum number of characters per history chunk when chunking is enabled.",
+    "type": "int",
+    "default": 100,
+    "hint": "100"
+  },
+  "enable_history_read_tool": {
+    "description": "Expose the read_current_history LLM tool for the current session.",
+    "type": "bool",
+    "default": true,
+    "hint": "true"
+  },
+  "history_read_tool_default_count": {
+    "description": "Default number of history entries the LLM history tool should read per page.",
+    "type": "int",
+    "default": 6,
+    "hint": "6"
+  }
+}

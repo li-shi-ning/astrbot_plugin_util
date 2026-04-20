@@ -14,12 +14,13 @@ from astrbot.api import logger
 
 # ====== API 模块 ======
 from astrbot.api.event import AstrMessageEvent, filter
-from astrbot.api.provider import LLMResponse
+from astrbot.api.provider import LLMResponse, ProviderRequest
 from astrbot.api.star import Context, Star, register
 from astrbot.core.config import AstrBotConfig
 from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
     AiocqhttpMessageEvent,
 )
+from astrbot.core.provider.func_tool_manager import FunctionToolManager
 from astrbot.core.star.star import star_map
 from astrbot.core.star.star_handler import EventType, star_handlers_registry
 
@@ -134,6 +135,20 @@ class util(Star):
             "hiro": "a9a59749-1904-4136-a409-5e4aea7d4e0d",
         }
         self.no_split_keywords = ("zssm", "这是什么", "hyw", "何意味")
+
+        self.enable_history_message_chunking = config.get(
+            "enable_history_message_chunking",
+            True,
+        )
+        self.history_message_chunk_length = max(
+            1,
+            int(config.get("history_message_chunk_length", 100)),
+        )
+        self.enable_history_read_tool = config.get("enable_history_read_tool", True)
+        self.history_read_tool_default_count = max(
+            1,
+            int(config.get("history_read_tool_default_count", 6)),
+        )
 
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
     @register_pack_type()
@@ -550,6 +565,82 @@ class util(Star):
         ]
         yield event.chain_result(chain)
 
+    @filter.on_llm_request(priority=-5000)
+    async def apply_history_tool_config(
+        self,
+        event: AstrMessageEvent,
+        req: ProviderRequest,
+    ):
+        tool_set = req.func_tool
+        if isinstance(tool_set, FunctionToolManager):
+            req.func_tool = tool_set.get_full_tool_set()
+            tool_set = req.func_tool
+
+        if not tool_set:
+            return
+
+        if not self.enable_history_read_tool:
+            tool_set.remove_tool("read_current_history")
+            return
+
+        if not await self._current_session_has_chunked_history(event):
+            tool_set.remove_tool("read_current_history")
+            return
+
+        func_tool_mgr = self.context.get_llm_tool_manager()
+        history_tool = func_tool_mgr.get_func("read_current_history")
+        if history_tool and history_tool.active:
+            tool_set.add_tool(history_tool)
+
+    @filter.llm_tool(name="read_current_history")
+    async def read_current_history(
+        self,
+        event: AstrMessageEvent,
+        count: int = 6,
+        page: int = 1,
+    ):
+        """Read the current session's conversation history in a human-readable format.
+
+        Args:
+            count(int): Number of history entries to read from the selected page.
+            page(int): Page number of the current session history. Starts from 1.
+        """
+        if not self.enable_history_read_tool:
+            return "The history reading tool is disabled by configuration."
+
+        count = max(1, count or self.history_read_tool_default_count)
+        page = max(1, page or 1)
+        conversation_id = (
+            await self.context.conversation_manager.get_curr_conversation_id(
+                event.unified_msg_origin
+            )
+        )
+        if not conversation_id:
+            return (
+                "No active conversation history is available for the current session."
+            )
+
+        (
+            contexts,
+            total_pages,
+        ) = await self.context.conversation_manager.get_human_readable_context(
+            event.unified_msg_origin,
+            conversation_id,
+            page,
+            count,
+        )
+        if not contexts:
+            return "No conversation history is available for the current session."
+
+        lines = [
+            f"conversation_id: {conversation_id}",
+            f"page: {page}/{max(total_pages, 1)}",
+            f"entries: {len(contexts)}",
+            "",
+        ]
+        lines.extend(self._format_history_entries(contexts))
+        return "\n".join(lines)
+
     @filter.on_llm_response()
     async def on_llm_response(self, event: AstrMessageEvent, req: LLMResponse):
         """LLM返回后对返回的消息进行处理"""
@@ -589,11 +680,73 @@ class util(Star):
             for message_data in message["message"]:
                 if message_data["type"] == "text":
                     try:
-                        outpur_text.append(message_data["data"]["text"])
+                        outpur_text.extend(
+                            self._chunk_history_message(message_data["data"]["text"])
+                        )
                     except (KeyError, TypeError):
                         pass
         message_id = data["messages"][0]["message_id"]
         return outpur_text, message_id
+
+    def _chunk_history_message(self, text: str) -> list[str]:
+        if not text:
+            return [""]
+        if not self.enable_history_message_chunking:
+            return [text]
+        if len(text) <= self.history_message_chunk_length:
+            return [text]
+        return [
+            text[i : i + self.history_message_chunk_length]
+            for i in range(0, len(text), self.history_message_chunk_length)
+        ]
+
+    def _format_history_entries(self, entries: list[str]) -> list[str]:
+        formatted_entries: list[str] = []
+        for entry_index, entry in enumerate(entries, start=1):
+            chunks = self._chunk_history_message(entry)
+            if len(chunks) == 1:
+                formatted_entries.append(f"[{entry_index}] {chunks[0]}")
+                continue
+            for chunk_index, chunk in enumerate(chunks, start=1):
+                formatted_entries.append(f"[{entry_index}.{chunk_index}] {chunk}")
+        return formatted_entries
+
+    async def _current_session_has_chunked_history(
+        self,
+        event: AstrMessageEvent,
+    ) -> bool:
+        if not self.enable_history_message_chunking:
+            return False
+
+        conversation_id = (
+            await self.context.conversation_manager.get_curr_conversation_id(
+                event.unified_msg_origin
+            )
+        )
+        if not conversation_id:
+            return False
+
+        conversation = await self.context.conversation_manager.get_conversation(
+            unified_msg_origin=event.unified_msg_origin,
+            conversation_id=conversation_id,
+        )
+        if not conversation or not conversation.history:
+            return False
+
+        try:
+            history = json.loads(conversation.history)
+        except (TypeError, json.JSONDecodeError):
+            return False
+
+        for record in history:
+            if not isinstance(record, dict):
+                continue
+            content = record.get("content")
+            if not isinstance(content, str):
+                continue
+            if len(self._chunk_history_message(content)) > 1:
+                return True
+        return False
 
     def _smart_split_text(self, text: str) -> list[str]:
         """清理LLM输出并将其分割成自然行"""
