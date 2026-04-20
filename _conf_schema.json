@@ -1,24 +1,24 @@
 {
   "enable_history_message_chunking": {
-    "description": "Enable chunking for long history messages before they are exposed by this plugin.",
+    "description": "是否对超长历史消息进行分段切割。",
     "type": "bool",
     "default": true,
-    "hint": "true"
+    "hint": "true / false"
   },
   "history_message_chunk_length": {
-    "description": "Maximum number of characters per history chunk when chunking is enabled.",
+    "description": "启用切割后，每段历史消息的最大字符数。",
     "type": "int",
     "default": 100,
     "hint": "100"
   },
   "enable_history_read_tool": {
-    "description": "Expose the read_current_history LLM tool for the current session.",
+    "description": "是否向大模型暴露 read_current_history 历史读取工具。",
     "type": "bool",
     "default": true,
-    "hint": "true"
+    "hint": "true / false"
   },
   "history_read_tool_default_count": {
-    "description": "Default number of history entries the LLM history tool should read per page.",
+    "description": "历史读取工具默认每页读取的历史条数。",
     "type": "int",
     "default": 6,
     "hint": "6"
