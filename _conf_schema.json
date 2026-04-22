@@ -22,5 +22,23 @@
     "type": "int",
     "default": 6,
     "hint": "6"
+  },
+  "enable_human_like_stream_delay": {
+    "description": "是否在逐句发送时加入随机停顿，模拟真人聊天节奏。",
+    "type": "bool",
+    "default": true,
+    "hint": "true / false"
+  },
+  "stream_delay_min_seconds": {
+    "description": "逐句发送的最小随机停顿秒数。",
+    "type": "float",
+    "default": 0.35,
+    "hint": "0.35"
+  },
+  "stream_delay_max_seconds": {
+    "description": "逐句发送的最大随机停顿秒数。",
+    "type": "float",
+    "default": 1.2,
+    "hint": "1.2"
   }
 }

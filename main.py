@@ -1,4 +1,5 @@
 # ====== 核心模块 ======
+import asyncio
 import json
 import random
 import re
@@ -148,6 +149,18 @@ class util(Star):
         self.history_read_tool_default_count = max(
             1,
             int(config.get("history_read_tool_default_count", 6)),
+        )
+        self.enable_human_like_stream_delay = config.get(
+            "enable_human_like_stream_delay",
+            True,
+        )
+        self.stream_delay_min_seconds = max(
+            0.0,
+            float(config.get("stream_delay_min_seconds", 0.35)),
+        )
+        self.stream_delay_max_seconds = max(
+            self.stream_delay_min_seconds,
+            float(config.get("stream_delay_max_seconds", 1.2)),
         )
 
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
@@ -663,6 +676,7 @@ class util(Star):
             if self.is_debug:
                 logger.info(f"[util] 发送分割后的行: {line}")
             await event.send(event.plain_result(line))
+            await self._sleep_like_human_chat(line)
         event.stop_event()
 
     # @filter.on_decorating_result()
@@ -805,6 +819,30 @@ class util(Star):
             )
 
         return self._normalize_output_lines(lines)
+
+    async def _sleep_like_human_chat(self, text: str) -> None:
+        if not self.enable_human_like_stream_delay:
+            return
+        if not text:
+            return
+
+        base_delay = random.uniform(
+            self.stream_delay_min_seconds,
+            self.stream_delay_max_seconds,
+        )
+        length_bonus = min(len(text) / 120.0, 0.9)
+        punctuation_bonus = 0.0
+        if any(char in text for char in "。！？!?；;"):
+            punctuation_bonus += 0.12
+        if any(char in text for char in "…~"):
+            punctuation_bonus += 0.08
+
+        delay_seconds = min(base_delay + length_bonus + punctuation_bonus, 2.8)
+        if self.is_debug:
+            logger.info(
+                f"[util] 模拟真人聊天间隔: delay={delay_seconds:.2f}s, text={text}"
+            )
+        await asyncio.sleep(delay_seconds)
 
     def _strip_llm_markdown(self, text: str) -> str:
         """从LLM输出中移除常见的markdown包装，同时保留可读文本"""
