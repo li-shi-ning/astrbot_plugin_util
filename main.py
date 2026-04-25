@@ -158,6 +158,7 @@ class util(Star):
             "enable_llm_request_debug_log",
             False,
         )
+        self._scoped_request_history_cache: dict[str, list[str]] = {}
         self.stream_delay_min_seconds = max(
             0.0,
             float(config.get("stream_delay_min_seconds", 0.35)),
@@ -588,6 +589,16 @@ class util(Star):
         event: AstrMessageEvent,
         req: ProviderRequest,
     ):
+        original_entries = self._build_current_request_history(req.contexts)
+        has_chunked_history = self._current_request_has_chunked_history(
+            original_entries
+        )
+        req.contexts = self._rewrite_request_contexts(req.contexts)
+        scoped_entries = self._build_current_request_history(req.contexts)
+        self._scoped_request_history_cache[self._request_scope_cache_key(event)] = (
+            scoped_entries
+        )
+
         tool_set = req.func_tool
         if isinstance(tool_set, FunctionToolManager):
             req.func_tool = tool_set.get_full_tool_set()
@@ -600,7 +611,7 @@ class util(Star):
             tool_set.remove_tool("read_current_history")
             return
 
-        if not await self._current_session_has_chunked_history(event):
+        if not has_chunked_history:
             tool_set.remove_tool("read_current_history")
             return
 
@@ -610,7 +621,9 @@ class util(Star):
             tool_set.add_tool(history_tool)
 
     @filter.on_llm_request(priority=-10000)
-    async def log_final_llm_request(self, event: AstrMessageEvent, req: ProviderRequest):
+    async def log_final_llm_request(
+        self, event: AstrMessageEvent, req: ProviderRequest
+    ):
         """Log the final ProviderRequest before sending it to the model."""
         if not self.enable_llm_request_debug_log:
             return
@@ -643,35 +656,27 @@ class util(Star):
 
         count = max(1, count or self.history_read_tool_default_count)
         page = max(1, page or 1)
-        conversation_id = (
-            await self.context.conversation_manager.get_curr_conversation_id(
-                event.unified_msg_origin
-            )
-        )
-        if not conversation_id:
-            return (
-                "No active conversation history is available for the current session."
-            )
-
-        (
-            contexts,
-            total_pages,
-        ) = await self.context.conversation_manager.get_human_readable_context(
-            event.unified_msg_origin,
-            conversation_id,
-            page,
-            count,
+        contexts = self._scoped_request_history_cache.get(
+            self._request_scope_cache_key(event),
+            [],
         )
         if not contexts:
-            return "No conversation history is available for the current session."
+            return "No current-request history is available for this session."
+
+        total_pages = max((len(contexts) + count - 1) // count, 1)
+        start = (page - 1) * count
+        end = start + count
+        page_contexts = contexts[start:end]
+        if not page_contexts:
+            return "The requested page is out of range for the current request."
 
         lines = [
-            f"conversation_id: {conversation_id}",
+            "scope: current_request_only",
             f"page: {page}/{max(total_pages, 1)}",
-            f"entries: {len(contexts)}",
+            f"entries: {len(page_contexts)}",
             "",
         ]
-        lines.extend(self._format_history_entries(contexts))
+        lines.extend(self._format_history_entries(page_contexts))
         return "\n".join(lines)
 
     @filter.on_decorating_result()
@@ -745,9 +750,7 @@ class util(Star):
         if value is None or isinstance(value, (str, int, float, bool)):
             return value
         if isinstance(value, dict):
-            return {
-                str(key): self._make_json_safe(item) for key, item in value.items()
-            }
+            return {str(key): self._make_json_safe(item) for key, item in value.items()}
         if isinstance(value, (list, tuple, set)):
             return [self._make_json_safe(item) for item in value]
         if hasattr(value, "model_dump"):
@@ -798,42 +801,98 @@ class util(Star):
                 formatted_entries.append(f"[{entry_index}.{chunk_index}] {chunk}")
         return formatted_entries
 
-    async def _current_session_has_chunked_history(
-        self,
-        event: AstrMessageEvent,
-    ) -> bool:
+    def _current_request_has_chunked_history(self, entries: list[str]) -> bool:
         if not self.enable_history_message_chunking:
             return False
 
-        conversation_id = (
-            await self.context.conversation_manager.get_curr_conversation_id(
-                event.unified_msg_origin
-            )
-        )
-        if not conversation_id:
-            return False
-
-        conversation = await self.context.conversation_manager.get_conversation(
-            unified_msg_origin=event.unified_msg_origin,
-            conversation_id=conversation_id,
-        )
-        if not conversation or not conversation.history:
-            return False
-
-        try:
-            history = json.loads(conversation.history)
-        except (TypeError, json.JSONDecodeError):
-            return False
-
-        for record in history:
-            if not isinstance(record, dict):
-                continue
-            content = record.get("content")
-            if not isinstance(content, str):
-                continue
-            if len(self._chunk_history_message(content)) > 1:
+        for entry in entries:
+            if len(self._chunk_history_message(entry)) > 1:
                 return True
         return False
+
+    def _request_scope_cache_key(self, event: AstrMessageEvent) -> str:
+        return str(event.unified_msg_origin)
+
+    def _rewrite_request_contexts(self, contexts: list):
+        if not isinstance(contexts, list):
+            return contexts
+
+        rewritten_contexts = []
+        for context in contexts:
+            if not isinstance(context, dict):
+                rewritten_contexts.append(context)
+                continue
+
+            rewritten_context = dict(context)
+            rewritten_context["content"] = self._rewrite_context_content(
+                context.get("content")
+            )
+            rewritten_contexts.append(rewritten_context)
+
+        return rewritten_contexts
+
+    def _rewrite_context_content(self, content):
+        if isinstance(content, str):
+            chunks = self._chunk_history_message(content)
+            if len(chunks) == 1:
+                return content
+            return "\n".join(chunks)
+
+        if not isinstance(content, list):
+            return content
+
+        rewritten_content = []
+        for item in content:
+            if not isinstance(item, dict):
+                rewritten_content.append(item)
+                continue
+
+            item_type = item.get("type")
+            if item_type != "text":
+                rewritten_content.append(dict(item))
+                continue
+
+            text = item.get("text")
+            if not isinstance(text, str):
+                rewritten_content.append(dict(item))
+                continue
+
+            chunks = self._chunk_history_message(text)
+            if len(chunks) == 1:
+                rewritten_content.append(dict(item))
+                continue
+
+            for chunk in chunks:
+                rewritten_item = dict(item)
+                rewritten_item["text"] = chunk
+                rewritten_content.append(rewritten_item)
+
+        return rewritten_content
+
+    def _build_current_request_history(self, contexts: list) -> list[str]:
+        if not isinstance(contexts, list):
+            return []
+
+        entries: list[str] = []
+        for context in contexts:
+            if not isinstance(context, dict):
+                continue
+            content = context.get("content")
+            if isinstance(content, str):
+                if content.strip():
+                    entries.append(content)
+                continue
+            if not isinstance(content, list):
+                continue
+            for item in content:
+                if not isinstance(item, dict):
+                    continue
+                if item.get("type") != "text":
+                    continue
+                text = item.get("text")
+                if isinstance(text, str) and text.strip():
+                    entries.append(text)
+        return entries
 
     def _smart_split_text(self, text: str) -> list[str]:
         """清理LLM输出并将其分割成自然行"""
