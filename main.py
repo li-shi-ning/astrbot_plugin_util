@@ -15,7 +15,7 @@ from astrbot.api import logger
 
 # ====== API 模块 ======
 from astrbot.api.event import AstrMessageEvent, filter
-from astrbot.api.provider import LLMResponse, ProviderRequest
+from astrbot.api.provider import ProviderRequest
 from astrbot.api.star import Context, Star, register
 from astrbot.core.config import AstrBotConfig
 from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
@@ -153,6 +153,10 @@ class util(Star):
         self.enable_human_like_stream_delay = config.get(
             "enable_human_like_stream_delay",
             True,
+        )
+        self.enable_llm_request_debug_log = config.get(
+            "enable_llm_request_debug_log",
+            False,
         )
         self.stream_delay_min_seconds = max(
             0.0,
@@ -605,6 +609,22 @@ class util(Star):
         if history_tool and history_tool.active:
             tool_set.add_tool(history_tool)
 
+    @filter.on_llm_request(priority=-10000)
+    async def log_final_llm_request(self, event: AstrMessageEvent, req: ProviderRequest):
+        """Log the final ProviderRequest before sending it to the model."""
+        if not self.enable_llm_request_debug_log:
+            return
+
+        logger.info(
+            "[util] final model input history:\n"
+            f"{self._json_dumps_for_log(req.contexts)}"
+        )
+        metadata = self._provider_request_metadata_without_prompts(req)
+        logger.info(
+            "[util] final ProviderRequest metadata without prompts:\n"
+            f"{self._json_dumps_for_log(metadata)}"
+        )
+
     @filter.llm_tool(name="read_current_history")
     async def read_current_history(
         self,
@@ -654,20 +674,33 @@ class util(Star):
         lines.extend(self._format_history_entries(contexts))
         return "\n".join(lines)
 
-    @filter.on_llm_response()
-    async def on_llm_response(self, event: AstrMessageEvent, req: LLMResponse):
-        """LLM返回后对返回的消息进行处理"""
-        if self.is_debug:
-            logger.debug(f"[util] 开始处理:{req.completion_text}")
-        if self.is_debug:
-            logger.info(f"[util] 原始LLM响应:\n{req.completion_text}")
+    @filter.on_decorating_result()
+    async def split_llm_result_before_send(self, event: AstrMessageEvent):
+        """在发送消息前分段发送 LLM 结果，避免阻断历史保存。"""
+        result = event.get_result()
+        if not result or not result.chain or not result.is_model_result():
+            return
+
         if self._should_skip_llm_split(event.message_str):
             if self.is_debug:
                 logger.info(
                     f"[util] 命中免切割关键词，跳过输出切割: {event.message_str}"
                 )
             return
-        output_lines = self._smart_split_text(req.completion_text)
+
+        if not all(isinstance(comp, Comp.Plain) for comp in result.chain):
+            if self.is_debug:
+                logger.info("[util] LLM结果包含非文本消息段，跳过输出切割")
+            return
+
+        text = "".join(comp.text for comp in result.chain)
+        if self.is_debug:
+            logger.info(f"[util] 原始LLM响应:\n{text}")
+
+        output_lines = self._smart_split_text(text)
+        if len(output_lines) <= 1:
+            return
+
         if self.is_debug:
             logger.info(
                 f"[util] 智能分割完成，行数={len(output_lines)}, 行内容={json.dumps(output_lines, ensure_ascii=False)}"
@@ -677,11 +710,51 @@ class util(Star):
                 logger.info(f"[util] 发送分割后的行: {line}")
             await event.send(event.plain_result(line))
             await self._sleep_like_human_chat(line)
-        event.stop_event()
+        event.clear_result()
 
-    # @filter.on_decorating_result()
-    # async def on_decorating_result(self, event: AstrMessageEvent, req: LLMResponse):
-    #     """在发生消息前"""
+    def _provider_request_metadata_without_prompts(
+        self,
+        req: ProviderRequest,
+    ) -> dict:
+        tool_names = None
+        if req.func_tool and hasattr(req.func_tool, "names"):
+            try:
+                tool_names = req.func_tool.names()
+            except Exception:
+                tool_names = str(req.func_tool)
+
+        return {
+            "session_id": req.session_id,
+            "model": req.model,
+            "image_urls": req.image_urls,
+            "audio_urls": req.audio_urls,
+            "extra_user_content_parts": req.extra_user_content_parts,
+            "func_tool_names": tool_names,
+            "conversation_id": req.conversation.cid if req.conversation else None,
+            "tool_calls_result": req.tool_calls_result,
+        }
+
+    def _json_dumps_for_log(self, value) -> str:
+        return json.dumps(
+            self._make_json_safe(value),
+            indent=2,
+            ensure_ascii=False,
+        )
+
+    def _make_json_safe(self, value):
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+        if isinstance(value, dict):
+            return {
+                str(key): self._make_json_safe(item) for key, item in value.items()
+            }
+        if isinstance(value, (list, tuple, set)):
+            return [self._make_json_safe(item) for item in value]
+        if hasattr(value, "model_dump"):
+            return self._make_json_safe(value.model_dump())
+        if hasattr(value, "__dict__"):
+            return self._make_json_safe(vars(value))
+        return str(value)
 
     async def get_message(self, group_id, bot, count):
         payloads = {"group_id": group_id, "count": count}

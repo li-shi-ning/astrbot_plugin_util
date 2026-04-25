@@ -29,6 +29,12 @@
     "default": true,
     "hint": "true / false"
   },
+  "enable_llm_request_debug_log": {
+    "description": "是否在 LLM 请求前打印最终输入模型的历史记录，以及去掉 prompt/system_prompt/contexts 后的 ProviderRequest 其他信息。日志可能包含隐私内容，建议仅调试时开启。",
+    "type": "bool",
+    "default": false,
+    "hint": "true / false"
+  },
   "stream_delay_min_seconds": {
     "description": "逐句发送的最小随机停顿秒数。",
     "type": "float",
