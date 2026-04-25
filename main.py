@@ -775,6 +775,7 @@ class util(Star):
         lines: list[str] = []
         buffer: list[str] = []
         bracket_stack: list[str] = []
+        quote_stack: list[str] = []
         opening_brackets = {
             "[": "]",
             "(": ")",
@@ -785,6 +786,13 @@ class util(Star):
             "\u300a": "\u300b",
             "<": ">",
         }
+        opening_quotes = {
+            '"': '"',
+            "\u201c": "\u201d",
+            "\u2018": "\u2019",
+            "\uff02": "\uff02",
+        }
+        closing_quotes = set(opening_quotes.values())
         split_punctuation = {
             "\u3002",
             "\uff01",
@@ -797,14 +805,31 @@ class util(Star):
         }
 
         for char in cleaned_text:
-            if char in opening_brackets:
+            closed_quote = False
+            if quote_stack:
+                if char == quote_stack[-1]:
+                    quote_stack.pop()
+                    closed_quote = True
+            elif char in opening_quotes:
+                quote_stack.append(opening_quotes[char])
+            elif char in opening_brackets:
                 bracket_stack.append(opening_brackets[char])
             elif bracket_stack and char == bracket_stack[-1]:
                 bracket_stack.pop()
 
             buffer.append(char)
-            if not bracket_stack and char in split_punctuation:
-                candidate = "".join(buffer).strip()
+            candidate = "".join(buffer).strip()
+            should_split_after_quote = (
+                closed_quote
+                and len(candidate) >= 2
+                and candidate[-1] in closing_quotes
+                and candidate[-2] in split_punctuation
+            )
+            if (
+                not bracket_stack
+                and not quote_stack
+                and (char in split_punctuation or should_split_after_quote)
+            ):
                 if candidate:
                     lines.append(candidate)
                 buffer = []
