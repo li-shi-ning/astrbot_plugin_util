@@ -729,14 +729,22 @@ class util(Star):
                 tool_names = str(req.func_tool)
 
         return {
-            "session_id": req.session_id,
-            "model": req.model,
-            "image_urls": req.image_urls,
-            "audio_urls": req.audio_urls,
-            "extra_user_content_parts": req.extra_user_content_parts,
+            "session_id": getattr(req, "session_id", None),
+            "model": getattr(req, "model", None),
+            "image_urls": getattr(req, "image_urls", None),
+            "audio_urls": getattr(req, "audio_urls", None),
+            "extra_user_content_parts": getattr(
+                req,
+                "extra_user_content_parts",
+                None,
+            ),
             "func_tool_names": tool_names,
-            "conversation_id": req.conversation.cid if req.conversation else None,
-            "tool_calls_result": req.tool_calls_result,
+            "conversation_id": (
+                getattr(req.conversation, "cid", None)
+                if getattr(req, "conversation", None)
+                else None
+            ),
+            "tool_calls_result": getattr(req, "tool_calls_result", None),
         }
 
     def _json_dumps_for_log(self, value) -> str:
