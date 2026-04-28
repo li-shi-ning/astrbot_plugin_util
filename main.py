@@ -158,6 +158,10 @@ class util(Star):
             False,
         )
         self.enable_final_history_log = config.get("enable_final_history_log", False)
+        self.enable_full_provider_request_log = config.get(
+            "enable_full_provider_request_log",
+            False,
+        )
         self._scoped_request_history_cache: dict[str, list[str]] = {}
         self.stream_delay_min_seconds = max(
             0.0,
@@ -607,7 +611,11 @@ class util(Star):
         self, event: AstrMessageEvent, req: ProviderRequest
     ):
         """Log the final ProviderRequest before sending it to the model."""
-        if not self.enable_final_history_log and not self.enable_llm_request_debug_log:
+        if (
+            not self.enable_final_history_log
+            and not self.enable_llm_request_debug_log
+            and not self.enable_full_provider_request_log
+        ):
             return
 
         if self.enable_final_history_log:
@@ -621,6 +629,12 @@ class util(Star):
             logger.info(
                 "[util] final ProviderRequest metadata without prompts:\n"
                 f"{self._json_dumps_for_log(metadata)}"
+            )
+
+        if self.enable_full_provider_request_log:
+            logger.info(
+                "[util] final ProviderRequest full attributes:\n"
+                f"{self._json_dumps_for_log(self._provider_request_public_attrs(req))}"
             )
 
     @filter.llm_tool(name="read_current_history")
@@ -732,24 +746,46 @@ class util(Star):
             "tool_calls_result": getattr(req, "tool_calls_result", None),
         }
 
+    def _provider_request_public_attrs(self, req: ProviderRequest) -> dict:
+        attrs = {}
+        for attr_name in dir(req):
+            if attr_name.startswith("_"):
+                continue
+            try:
+                attr_value = getattr(req, attr_name)
+            except Exception as exc:
+                attrs[attr_name] = f"<unreadable: {type(exc).__name__}: {exc}>"
+                continue
+            if callable(attr_value):
+                continue
+            attrs[attr_name] = attr_value
+        return attrs
+
     def _json_dumps_for_log(self, value) -> str:
         return json.dumps(
-            self._make_json_safe(value),
+            self._make_json_safe(value, set()),
             indent=2,
             ensure_ascii=False,
         )
 
-    def _make_json_safe(self, value):
+    def _make_json_safe(self, value, seen: set[int]):
         if value is None or isinstance(value, (str, int, float, bool)):
             return value
+        value_id = id(value)
+        if value_id in seen:
+            return f"<circular:{type(value).__name__}>"
+        seen.add(value_id)
         if isinstance(value, dict):
-            return {str(key): self._make_json_safe(item) for key, item in value.items()}
+            return {
+                str(key): self._make_json_safe(item, seen)
+                for key, item in value.items()
+            }
         if isinstance(value, (list, tuple, set)):
-            return [self._make_json_safe(item) for item in value]
+            return [self._make_json_safe(item, seen) for item in value]
         if hasattr(value, "model_dump"):
-            return self._make_json_safe(value.model_dump())
+            return self._make_json_safe(value.model_dump(), seen)
         if hasattr(value, "__dict__"):
-            return self._make_json_safe(vars(value))
+            return self._make_json_safe(vars(value), seen)
         return str(value)
 
     async def get_message(self, group_id, bot, count):

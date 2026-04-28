@@ -41,6 +41,12 @@
     "default": false,
     "hint": "true / false"
   },
+  "enable_full_provider_request_log": {
+    "description": "是否在 LLM 请求前打印 ProviderRequest 的全部公开属性快照。日志可能很长且包含隐私内容，建议仅调试时开启。",
+    "type": "bool",
+    "default": false,
+    "hint": "true / false"
+  },
   "stream_delay_min_seconds": {
     "description": "逐句发送的最小随机停顿秒数。",
     "type": "float",
