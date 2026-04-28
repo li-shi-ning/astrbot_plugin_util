@@ -158,6 +158,7 @@ class util(Star):
             "enable_llm_request_debug_log",
             False,
         )
+        self.enable_final_history_log = config.get("enable_final_history_log", False)
         self._scoped_request_history_cache: dict[str, list[str]] = {}
         self.stream_delay_min_seconds = max(
             0.0,
@@ -625,18 +626,21 @@ class util(Star):
         self, event: AstrMessageEvent, req: ProviderRequest
     ):
         """Log the final ProviderRequest before sending it to the model."""
-        if not self.enable_llm_request_debug_log:
+        if not self.enable_final_history_log and not self.enable_llm_request_debug_log:
             return
 
-        logger.info(
-            "[util] final model input history:\n"
-            f"{self._json_dumps_for_log(req.contexts)}"
-        )
-        metadata = self._provider_request_metadata_without_prompts(req)
-        logger.info(
-            "[util] final ProviderRequest metadata without prompts:\n"
-            f"{self._json_dumps_for_log(metadata)}"
-        )
+        if self.enable_final_history_log:
+            logger.info(
+                "[util] final model input history:\n"
+                f"{self._json_dumps_for_log(req.contexts)}"
+            )
+
+        if self.enable_llm_request_debug_log:
+            metadata = self._provider_request_metadata_without_prompts(req)
+            logger.info(
+                "[util] final ProviderRequest metadata without prompts:\n"
+                f"{self._json_dumps_for_log(metadata)}"
+            )
 
     @filter.llm_tool(name="read_current_history")
     async def read_current_history(
