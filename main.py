@@ -134,7 +134,7 @@ class util(Star):
             "ema": "486bd7ee-a273-4e3d-a02a-e0dfc880cbe2",
             "hiro": "a9a59749-1904-4136-a409-5e4aea7d4e0d",
         }
-        self.no_split_keywords = ("zssm", "这是什么", "hyw", "何意味")
+        self.no_split_keywords = ("zssm", "这是什么")
 
         self.enable_history_message_chunking = config.get(
             "enable_history_message_chunking",
