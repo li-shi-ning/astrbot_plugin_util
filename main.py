@@ -136,6 +136,10 @@ class util(Star):
         }
         self.no_split_keywords = ("zssm", "这是什么")
 
+        self.enable_history_chunking_feature = config.get(
+            "enable_history_chunking_feature",
+            True,
+        )
         self.enable_history_message_chunking = config.get(
             "enable_history_message_chunking",
             True,
@@ -145,6 +149,10 @@ class util(Star):
             int(config.get("history_message_chunk_length", 100)),
         )
         self.enable_history_read_tool = config.get("enable_history_read_tool", True)
+        self.remove_history_read_tool_before_llm = config.get(
+            "remove_history_read_tool_before_llm",
+            False,
+        )
         self.history_read_tool_default_count = max(
             1,
             int(config.get("history_read_tool_default_count", 6)),
@@ -593,6 +601,15 @@ class util(Star):
         event: AstrMessageEvent,
         req: ProviderRequest,
     ):
+        if self.remove_history_read_tool_before_llm:
+            self._remove_history_read_tool_from_request(req)
+
+        if not self.enable_history_chunking_feature:
+            self._scoped_request_history_cache[
+                self._request_scope_cache_key(event)
+            ] = []
+            return
+
         original_entries = self._build_current_request_history(req.contexts)
         has_chunked_history = self._current_request_has_chunked_history(
             original_entries
@@ -650,6 +667,8 @@ class util(Star):
             count(int): Number of history entries to read from the selected page.
             page(int): Page number of the current session history. Starts from 1.
         """
+        if not self.enable_history_chunking_feature:
+            return "The history chunking feature is disabled by configuration."
         if not self.enable_history_read_tool:
             return "The history reading tool is disabled by configuration."
 
@@ -761,6 +780,63 @@ class util(Star):
             attrs[attr_name] = attr_value
         return attrs
 
+    def _remove_history_read_tool_from_request(self, req: ProviderRequest) -> bool:
+        tool_set = getattr(req, "func_tool", None)
+        if not tool_set:
+            return False
+
+        if not hasattr(tool_set, "remove_tool") and hasattr(
+            tool_set, "get_full_tool_set"
+        ):
+            try:
+                tool_set = tool_set.get_full_tool_set()
+                req.func_tool = tool_set
+            except Exception as exc:
+                logger.warning(
+                    f"[util] failed to materialize request tool set before removing read_current_history: {exc}"
+                )
+                return False
+
+        detected = self._request_tool_set_has_tool(tool_set, "read_current_history")
+        removed = False
+        if hasattr(tool_set, "remove_tool"):
+            try:
+                tool_set.remove_tool("read_current_history")
+                removed = True
+            except Exception as exc:
+                logger.warning(
+                    f"[util] failed to remove read_current_history from request tools: {exc}"
+                )
+        else:
+            tools = getattr(tool_set, "tools", None)
+            if isinstance(tools, list):
+                new_tools = [
+                    tool
+                    for tool in tools
+                    if getattr(tool, "name", None) != "read_current_history"
+                ]
+                removed = len(new_tools) != len(tools)
+                tool_set.tools = new_tools
+
+        if self.is_debug:
+            logger.info(
+                "[util] read_current_history request-tool removal: "
+                f"detected={detected}, removed={removed}"
+            )
+        return removed
+
+    def _request_tool_set_has_tool(self, tool_set, tool_name: str) -> bool:
+        if hasattr(tool_set, "names"):
+            try:
+                return tool_name in tool_set.names()
+            except Exception:
+                pass
+
+        tools = getattr(tool_set, "tools", None)
+        if isinstance(tools, list):
+            return any(getattr(tool, "name", None) == tool_name for tool in tools)
+        return False
+
     def _json_dumps_for_log(self, value) -> str:
         return json.dumps(
             self._make_json_safe(value, set()),
@@ -810,7 +886,10 @@ class util(Star):
     def _chunk_history_message(self, text: str) -> list[str]:
         if not text:
             return [""]
-        if not self.enable_history_message_chunking:
+        if (
+            not self.enable_history_chunking_feature
+            or not self.enable_history_message_chunking
+        ):
             return [text]
         if len(text) <= self.history_message_chunk_length:
             return [text]
@@ -831,7 +910,10 @@ class util(Star):
         return formatted_entries
 
     def _current_request_has_chunked_history(self, entries: list[str]) -> bool:
-        if not self.enable_history_message_chunking:
+        if (
+            not self.enable_history_chunking_feature
+            or not self.enable_history_message_chunking
+        ):
             return False
 
         for entry in entries:
