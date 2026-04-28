@@ -21,7 +21,6 @@ from astrbot.core.config import AstrBotConfig
 from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
     AiocqhttpMessageEvent,
 )
-from astrbot.core.provider.func_tool_manager import FunctionToolManager
 from astrbot.core.star.star import star_map
 from astrbot.core.star.star_handler import EventType, star_handlers_registry
 
@@ -594,32 +593,14 @@ class util(Star):
         has_chunked_history = self._current_request_has_chunked_history(
             original_entries
         )
-        req.contexts = self._rewrite_request_contexts(req.contexts)
+        req.contexts = self._rewrite_request_contexts(
+            req.contexts,
+            add_history_tool_hint=self.enable_history_read_tool and has_chunked_history,
+        )
         scoped_entries = self._build_current_request_history(req.contexts)
         self._scoped_request_history_cache[self._request_scope_cache_key(event)] = (
             scoped_entries
         )
-
-        tool_set = req.func_tool
-        if isinstance(tool_set, FunctionToolManager):
-            req.func_tool = tool_set.get_full_tool_set()
-            tool_set = req.func_tool
-
-        if not tool_set:
-            return
-
-        if not self.enable_history_read_tool:
-            tool_set.remove_tool("read_current_history")
-            return
-
-        if not has_chunked_history:
-            tool_set.remove_tool("read_current_history")
-            return
-
-        func_tool_mgr = self.context.get_llm_tool_manager()
-        history_tool = func_tool_mgr.get_func("read_current_history")
-        if history_tool and history_tool.active:
-            tool_set.add_tool(history_tool)
 
     @filter.on_llm_request(priority=-10000)
     async def log_final_llm_request(
@@ -825,35 +806,59 @@ class util(Star):
     def _request_scope_cache_key(self, event: AstrMessageEvent) -> str:
         return str(event.unified_msg_origin)
 
-    def _rewrite_request_contexts(self, contexts: list):
+    def _chunked_history_tool_hint(self) -> str:
+        return (
+            "[历史消息切割提示]\n"
+            "本轮请求中有较长的历史消息已被分段切割。"
+            "如果你需要确认被切割前后的上下文，可以主动调用 read_current_history 工具读取当前请求中的历史片段。"
+            "该工具只返回本轮 req.contexts 中已有的内容，不会额外读取或引入其他记忆。"
+        )
+
+    def _rewrite_request_contexts(
+        self,
+        contexts: list,
+        add_history_tool_hint: bool = False,
+    ):
         if not isinstance(contexts, list):
             return contexts
 
         rewritten_contexts = []
+        hint_added = False
         for context in contexts:
             if not isinstance(context, dict):
                 rewritten_contexts.append(context)
                 continue
 
             rewritten_context = dict(context)
-            rewritten_context["content"] = self._rewrite_context_content(
-                context.get("content")
+            rewritten_content, added_hint = self._rewrite_context_content(
+                context.get("content"),
+                add_history_tool_hint and not hint_added,
             )
+            rewritten_context["content"] = rewritten_content
+            hint_added = hint_added or added_hint
             rewritten_contexts.append(rewritten_context)
 
         return rewritten_contexts
 
-    def _rewrite_context_content(self, content):
+    def _rewrite_context_content(
+        self,
+        content,
+        add_history_tool_hint: bool = False,
+    ):
         if isinstance(content, str):
             chunks = self._chunk_history_message(content)
             if len(chunks) == 1:
-                return content
-            return "\n".join(chunks)
+                return content, False
+            if add_history_tool_hint:
+                chunks.append(self._chunked_history_tool_hint())
+                return "\n".join(chunks), True
+            return "\n".join(chunks), False
 
         if not isinstance(content, list):
-            return content
+            return content, False
 
         rewritten_content = []
+        hint_added = False
         for item in content:
             if not isinstance(item, dict):
                 rewritten_content.append(item)
@@ -879,7 +884,13 @@ class util(Star):
                 rewritten_item["text"] = chunk
                 rewritten_content.append(rewritten_item)
 
-        return rewritten_content
+            if add_history_tool_hint and not hint_added:
+                hint_item = dict(item)
+                hint_item["text"] = self._chunked_history_tool_hint()
+                rewritten_content.append(hint_item)
+                hint_added = True
+
+        return rewritten_content, hint_added
 
     def _build_current_request_history(self, contexts: list) -> list[str]:
         if not isinstance(contexts, list):
