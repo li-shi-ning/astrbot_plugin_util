@@ -300,6 +300,51 @@ class util(Star):
         payloads = {"message_id": message_id, "emoji_id": emoji_id}
         await bot.api.call_action("set_msg_emoji_like", **payloads)
 
+    @filter.regex(r"\.r\d*d\d+")
+    async def dice_roll(self, event: AstrMessageEvent):
+        """检测骰子语法并投掷，仅对 ni 开放"""
+        platform_id = getattr(getattr(event, "platform_meta", None), "id", None)
+        if platform_id != "ni":
+            return
+
+        message_text = event.message_str
+        pattern = r"\.r(\d+)?d(\d+)([+-]\d+)?"
+        matches = re.findall(pattern, message_text)
+        if not matches:
+            return
+
+        results = []
+        for count_str, sides_str, modifier_str in matches:
+            count = int(count_str) if count_str else 1
+            sides = int(sides_str)
+            modifier = int(modifier_str) if modifier_str else 0
+
+            if count < 1 or count > 100:
+                continue
+            if sides < 2 or sides > 1000:
+                continue
+
+            rolls = [random.randint(1, sides) for _ in range(count)]
+            total = sum(rolls) + modifier
+            roll_detail = " + ".join(map(str, rolls))
+            modifier_display = modifier_str if modifier_str else ""
+
+            if count == 1 and modifier == 0:
+                results.append(f"1d{sides} = {total}")
+            elif count == 1:
+                results.append(
+                    f"1d{sides}{modifier_display} = {rolls[0]}{modifier_display} = {total}"
+                )
+            elif modifier == 0:
+                results.append(f"{count}d{sides} = {roll_detail} = {total}")
+            else:
+                results.append(
+                    f"{count}d{sides}{modifier_display} = {roll_detail}{modifier_display} = {total}"
+                )
+
+        if results:
+            yield event.plain_result("\n".join(results))
+
     @filter.command_group("lishi")
     async def lishi(self):
         pass
