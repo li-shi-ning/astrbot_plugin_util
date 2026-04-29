@@ -242,6 +242,7 @@ class util(Star):
         )
         self.li_persona_id = config.get("li_persona_id", "").strip() or None
         self.li_chat_provider_id = config.get("li_chat_provider_id", "").strip() or None
+        self.li_platform_id = config.get("li_platform_id", "").strip() or None
 
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
     @register_pack_type()
@@ -856,21 +857,44 @@ class util(Star):
             return self.li_chat_provider_id
         return await self.context.get_current_chat_provider_id(li_umo)
 
+    def _find_li_platform(self):
+        """查找希罗的平台适配器，优先使用配置的 ID，否则大小写不敏感匹配。"""
+        if self.li_platform_id:
+            platform = self.context.get_platform_inst(self.li_platform_id)
+            if platform is not None:
+                return platform
+
+        available_ids = [
+            p.meta().id for p in self.context.platform_manager.platform_insts
+        ]
+        logger.info(
+            f"[util] _find_li_platform: 可用平台 ID: {available_ids}"
+        )
+
+        target = self.li_platform_id or "li"
+        target_lower = target.lower()
+        for p in self.context.platform_manager.platform_insts:
+            pid = p.meta().id
+            if pid and pid.lower() == target_lower:
+                return p
+
+        return None
+
     @filter.llm_tool(name="let_li_speak")
     async def let_li_speak(self, event: AstrMessageEvent, prompt: str) -> str:
         """当艾玛认为自己需要希罗帮忙的时候，调用此工具。希罗会以自己的人设接管对话并直接对用户说话。
 
         艾玛应当在这个工具中向希罗传递足够的信息，包括当前发生了什么、
-        你希望希罗帮忙说什么或做什么。希罗收到后会用他自己的方式做出回应。
+        你希望希罗帮忙说什么或做什么。希罗收到后会用她自己的方式做出回应。
 
         Args:
-            prompt(str): 艾玛传递给希罗的信息。告诉希罗当前情况，以及你需要他做什么。
+            prompt(str): 艾玛传递给希罗的信息。告诉希罗当前情况，以及你需要她做什么。
         """
         platform_id = event.get_platform_id()
         if platform_id != "ni":
             return "希罗不在艾玛这边。"
 
-        li_platform = self.context.get_platform_inst("li")
+        li_platform = self._find_li_platform()
         if li_platform is None:
             logger.error("[util] let_li_speak: 找不到希罗的适配器")
             return "希罗现在不在。艾玛可以再等一等，或者自己先试试。"
@@ -919,7 +943,7 @@ class util(Star):
 
         li_reply_text = llm_response.completion_text
         if not li_reply_text or not li_reply_text.strip():
-            return "希罗什么都没说。也许他觉得不需要说什么。"
+            return "希罗什么都没说。也许她觉得不需要说什么。"
 
         try:
             chain = [Comp.Plain(li_reply_text)]
@@ -939,7 +963,7 @@ class util(Star):
             logger.warning(f"[util] let_li_speak: 更新希罗对话历史失败: {e}")
 
         return (
-            f"希罗已经替你出面回复了，艾玛。他说的是：\n"
+            f"希罗已经替你出面回复了，艾玛。她说的是：\n"
             f"\"{li_reply_text}\""
         )
 
