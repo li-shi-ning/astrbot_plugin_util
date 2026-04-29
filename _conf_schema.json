@@ -70,5 +70,17 @@
     "type": "float",
     "default": 1.2,
     "hint": "1.2"
+  },
+  "li_persona_id": {
+    "description": "li 的人格 ID（Persona ID）。留空则使用 li 配置文件的默认人格。",
+    "type": "string",
+    "default": "",
+    "hint": "留空自动获取"
+  },
+  "li_chat_provider_id": {
+    "description": "li 使用的聊天模型 Provider ID。留空则自动获取。",
+    "type": "string",
+    "default": "",
+    "hint": "留空自动获取"
   }
 }

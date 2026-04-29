@@ -21,6 +21,7 @@ from astrbot.core.config import AstrBotConfig
 from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
     AiocqhttpMessageEvent,
 )
+from astrbot.core.platform.message_session import MessageSession
 from astrbot.core.star.star import star_map
 from astrbot.core.star.star_handler import EventType, star_handlers_registry
 
@@ -239,6 +240,8 @@ class util(Star):
             self.stream_delay_min_seconds,
             float(config.get("stream_delay_max_seconds", 1.2)),
         )
+        self.li_persona_id = config.get("li_persona_id", "").strip() or None
+        self.li_chat_provider_id = config.get("li_chat_provider_id", "").strip() or None
 
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
     @register_pack_type()
@@ -341,6 +344,61 @@ class util(Star):
                 results.append(
                     f"{count}d{sides}{modifier_display} = {roll_detail}{modifier_display} = {total}"
                 )
+
+        if results:
+            yield event.plain_result("\n".join(results))
+
+    @filter.regex(r"[点。\.]ww")
+    async def ww_dice(self, event: AstrMessageEvent):
+        """无限团骰子(.ww)，仅对 ni 开放"""
+        platform_id = getattr(getattr(event, "platform_meta", None), "id", None)
+        if platform_id != "ni":
+            return
+
+        message_text = event.message_str
+        pattern = r"[点。\.]ww\s*(\d+)(?:\s*a\s*(\d+))?(?:\s+(.+))?"
+        matches = re.findall(pattern, message_text)
+        if not matches:
+            return
+
+        results = []
+        for count_str, a_str, reason in matches:
+            count = int(count_str)
+            a_value = int(a_str) if a_str else 10
+
+            if count < 1 or count > 100:
+                continue
+            if a_value < 5 or a_value > 10:
+                continue
+
+            MAX_TOTAL = 200
+            rolls = []
+            queue = [random.randint(1, 10) for _ in range(count)]
+
+            while queue and len(rolls) < MAX_TOTAL:
+                die = queue.pop(0)
+                if die >= a_value:
+                    queue.append(random.randint(1, 10))
+                rolls.append(die)
+
+            die_strs = []
+            successes = 0
+            for i, die in enumerate(rolls):
+                marks = ""
+                if die >= 8:
+                    successes += 1
+                    marks += "*"
+                if die >= a_value:
+                    marks += "!"
+                if i == count and len(rolls) > count:
+                    die_strs.append("|")
+                die_strs.append(f"{die}{marks}")
+
+            a_display = f"a{a_value}" if a_value != 10 else ""
+            reason_display = f" {reason}" if reason else ""
+            over = "(已达上限)" if len(rolls) >= MAX_TOTAL else ""
+            header = f"{count}d10{a_display}{reason_display}"
+            results.append(f"{header} = {{{', '.join(die_strs)}}} = {successes}成功{over}")
 
         if results:
             yield event.plain_result("\n".join(results))
@@ -767,6 +825,122 @@ class util(Star):
                 "[util] final ProviderRequest full attributes:\n"
                 f"{self._json_dumps_for_log(self._provider_request_public_attrs(req))}"
             )
+
+    def _build_li_session(self, event: AstrMessageEvent) -> MessageSession:
+        """从 ni 的 event 构造 li 的 MessageSession，保持相同的 message_type 和 session_id。"""
+        ni_session = event.session
+        return MessageSession(
+            platform_name="aiocqhttp",
+            message_type=ni_session.message_type,
+            session_id=ni_session.session_id,
+        )
+
+    async def _resolve_li_persona(self, li_umo: str) -> tuple[str, str]:
+        """获取 li 的 persona，返回 (system_prompt, persona_name)。"""
+        if self.li_persona_id:
+            persona = self.context.persona_manager.get_persona_v3_by_id(
+                self.li_persona_id
+            )
+            if persona and persona.get("prompt"):
+                return persona["prompt"], persona.get("name", self.li_persona_id)
+
+        persona = await self.context.persona_manager.get_default_persona_v3(li_umo)
+        return persona.get("prompt", ""), persona.get("name", "default")
+
+    async def _resolve_li_provider_id(self, li_umo: str) -> str:
+        """获取 li 的 chat provider ID。"""
+        if self.li_chat_provider_id:
+            return self.li_chat_provider_id
+        return await self.context.get_current_chat_provider_id(li_umo)
+
+    @filter.llm_tool(name="let_li_speak")
+    async def let_li_speak(self, event: AstrMessageEvent, prompt: str) -> str:
+        """让 li 以自己的人设接管对话并发送消息。
+
+        当 ni 正在与用户对话但需要 li 出面说话时调用。li 会以自己的 persona 生成回复，
+        通过 li 的 bot 发送到群聊，并记录到对话历史中以保持上下文连续性。
+
+        Args:
+            prompt(str): 传递给 li 的提示词，说明当前对话背景和希望 li 说的话。
+        """
+        platform_id = event.get_platform_id()
+        if platform_id != "ni":
+            return (
+                f"[let_li_speak] 此工具仅限 ni 调用，当前 platform_id: {platform_id}"
+            )
+
+        li_platform = self.context.get_platform_inst("li")
+        if li_platform is None:
+            logger.error("[util] let_li_speak: 找不到 li 平台适配器")
+            return "[let_li_speak] 错误：找不到 li 平台适配器。"
+
+        li_session = self._build_li_session(event)
+        li_umo = str(li_session)
+
+        try:
+            li_system_prompt, li_persona_name = await self._resolve_li_persona(li_umo)
+        except Exception as e:
+            logger.error(f"[util] let_li_speak: 获取 li persona 失败: {e}")
+            return f"[let_li_speak] 错误：获取 li persona 失败: {e}"
+
+        try:
+            li_provider_id = await self._resolve_li_provider_id(li_umo)
+        except Exception as e:
+            logger.error(f"[util] let_li_speak: 获取 li provider_id 失败: {e}")
+            return f"[let_li_speak] 错误：获取 li provider 失败: {e}"
+
+        li_contexts: list = []
+        try:
+            conv_id = await self.context.conversation_manager.get_curr_conversation_id(
+                li_umo
+            )
+            if conv_id:
+                conv = await self.context.conversation_manager.get_conversation(
+                    unified_msg_origin=li_umo,
+                    conversation_id=conv_id,
+                )
+                if conv and conv.history:
+                    li_contexts = json.loads(conv.history)
+        except Exception as e:
+            logger.warning(f"[util] let_li_speak: 读取 li 对话历史失败: {e}")
+
+        try:
+            llm_response = await self.context.llm_generate(
+                chat_provider_id=li_provider_id,
+                prompt=prompt,
+                system_prompt=li_system_prompt,
+                contexts=li_contexts,
+            )
+        except Exception as e:
+            logger.error(f"[util] let_li_speak: LLM 生成失败: {e}")
+            logger.error(traceback.format_exc())
+            return f"[let_li_speak] 错误：li 的 LLM 生成失败: {e}"
+
+        li_reply_text = llm_response.completion_text
+        if not li_reply_text or not li_reply_text.strip():
+            return "[let_li_speak] li 没有生成回复内容。"
+
+        try:
+            chain = [Comp.Plain(li_reply_text)]
+            await li_platform.send_by_session(li_session, chain)
+        except Exception as e:
+            logger.error(f"[util] let_li_speak: li 发送消息失败: {e}")
+            logger.error(traceback.format_exc())
+            return f"[let_li_speak] 错误：li 生成了一段回复但发送失败: {e}"
+
+        try:
+            li_contexts.append({"role": "assistant", "content": li_reply_text})
+            await self.context.conversation_manager.update_conversation(
+                unified_msg_origin=li_umo,
+                history=li_contexts,
+            )
+        except Exception as e:
+            logger.warning(f"[util] let_li_speak: 更新 li 对话历史失败: {e}")
+
+        return (
+            f"[let_li_speak 完成] li 已以人格 '{li_persona_name}' 发送回复:\n"
+            f"\"{li_reply_text}\""
+        )
 
     @filter.llm_tool(name="read_current_history")
     async def read_current_history(
