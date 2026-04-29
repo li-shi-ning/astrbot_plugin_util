@@ -1,4 +1,10 @@
 {
+  "enable_history_chunking_feature": {
+    "description": "是否启用历史消息切割整套功能。关闭后不会切割 req.contexts，也不会让 read_current_history 工具返回历史片段。",
+    "type": "bool",
+    "default": true,
+    "hint": "true / false"
+  },
   "enable_history_message_chunking": {
     "description": "是否对超长历史消息进行分段切割。",
     "type": "bool",
@@ -15,6 +21,12 @@
     "description": "是否向大模型暴露 read_current_history 历史读取工具。",
     "type": "bool",
     "default": true,
+    "hint": "true / false"
+  },
+  "remove_history_read_tool_before_llm": {
+    "description": "是否在请求大模型前从本轮工具集中移除 read_current_history。开启后会检测该工具是否存在，即使它未激活也会尝试按名称移除。",
+    "type": "bool",
+    "default": false,
     "hint": "true / false"
   },
   "history_read_tool_default_count": {
