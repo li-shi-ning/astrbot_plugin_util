@@ -300,7 +300,7 @@ class util(Star):
         payloads = {"message_id": message_id, "emoji_id": emoji_id}
         await bot.api.call_action("set_msg_emoji_like", **payloads)
 
-    @filter.regex(r"[。\.]r\d*d\d+")
+    @filter.regex(r"[点。\.]r\d*d\d+")
     async def dice_roll(self, event: AstrMessageEvent):
         """检测骰子语法并投掷，仅对 ni 开放"""
         platform_id = getattr(getattr(event, "platform_meta", None), "id", None)
