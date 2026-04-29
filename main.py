@@ -97,6 +97,66 @@ class util(Star):
             ]
         )
 
+        self.ema_poke_responses = [
+            # 正常态
+            "诶？怎么了？",
+            "啊、我在。",
+            "嗯？有什么事吗？",
+            "……你找我？",
+            "欸、等一下——",
+            "啊，对不起，我是不是走神了。",
+            # 轻微不耐烦
+            "那个……是我做错什么了吗？",
+            "能不能先告诉我发生了什么……",
+            "我、我在听，真的在听。",
+            "对不起，我再认真一点。",
+            "你生气了吗？",
+            "不要不说话……",
+            # 高压态
+            "对不起、对不起，我真的不是故意的——",
+            "你是不是讨厌我了？",
+            "不要丢下我……",
+            "我会改的，告诉我哪里不对。",
+            "求你了，别这样看着我。",
+            "我真的不想再被丢下了。",
+            "哪怕再给我一次机会也好……",
+            # 保留项
+            "喵~",
+            "……嗯，我还在。",
+            "pack",
+        ]
+
+        self.ema_poke_weights = np.array(
+            [
+                # 正常态
+                7.0,
+                6.5,
+                6.0,
+                5.5,
+                6.5,
+                5.0,
+                # 轻微不耐烦
+                8.0,
+                7.5,
+                7.0,
+                6.5,
+                7.0,
+                5.0,
+                # 高压态
+                9.0,
+                8.5,
+                8.0,
+                7.5,
+                7.0,
+                8.0,
+                7.5,
+                # 保留项
+                4.0,  # 喵
+                5.0,  # 还在
+                5.0,  # 眼泪
+            ]
+        )
+
         self.emotions_mapping = {
             "开心": [2, 74, 109, 272, 295, 305, 318, 319, 324, 339],
             "得意": [
@@ -189,6 +249,16 @@ class util(Star):
         sender_id = raw_message.get("user_id", None)
         target_id = raw_message.get("target_id", None)
         group_id = raw_message.get("group_id", None)
+        platform_id = getattr(getattr(event, "platform_meta", None), "id", None)
+        logger.info(f"platform_id:{platform_id}")
+
+        if platform_id == "ni":
+            responses = self.ema_poke_responses
+            weights = self.ema_poke_weights
+        else:
+            responses = self.poke_responses
+            weights = self.poke_weights
+
         if (
             not bot_id
             or not sender_id
@@ -196,7 +266,7 @@ class util(Star):
             or str(target_id) != str(bot_id)
         ):
             return
-        text = await self.weighted_random_choice(self.poke_responses, self.poke_weights)
+        text = await self.weighted_random_choice(responses, weights)
         logger.info(f"检测到戳一戳，期望发送文本:{text}")
         if text == "pack":
             payloads = {"user_id": sender_id}
@@ -205,7 +275,7 @@ class util(Star):
             bot = getattr(event, "bot", None)
             if bot is None:
                 text = await self.weighted_random_choice(
-                    self.poke_responses[:-1], self.poke_weights[:-1]
+                    responses[:-1], weights[:-1]
                 )
                 logger.info(f"机器人不是AIOCQHTTP，期望发送文本:{text}")
                 yield event.plain_result(text)
