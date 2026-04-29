@@ -22,6 +22,7 @@ from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
     AiocqhttpMessageEvent,
 )
 from astrbot.core.platform.message_session import MessageSession
+from astrbot.core.message.message_event_result import MessageChain
 from astrbot.core.star.star import star_map
 from astrbot.core.star.star_handler import EventType, star_handlers_registry
 
@@ -946,7 +947,7 @@ class util(Star):
             return "希罗什么都没说。也许她觉得不需要说什么。"
 
         try:
-            chain = [Comp.Plain(li_reply_text)]
+            chain = MessageChain(chain=[Comp.Plain(li_reply_text)])
             await li_platform.send_by_session(li_session, chain)
         except Exception as e:
             logger.error(f"[util] let_li_speak: 希罗发送消息失败: {e}")
