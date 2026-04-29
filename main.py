@@ -776,6 +776,9 @@ class util(Star):
         if self.remove_history_read_tool_before_llm:
             self._remove_history_read_tool_from_request(req)
 
+        if event.get_platform_id() != "ni":
+            self._remove_tool_from_request(req, "let_li_speak")
+
         if not self.enable_history_chunking_feature:
             self._scoped_request_history_cache[
                 self._request_scope_cache_key(event)
@@ -827,7 +830,7 @@ class util(Star):
             )
 
     def _build_li_session(self, event: AstrMessageEvent) -> MessageSession:
-        """从 ni 的 event 构造 li 的 MessageSession，保持相同的 message_type 和 session_id。"""
+        """从艾玛的 event 构造希罗的 MessageSession，保持相同的 message_type 和 session_id。"""
         ni_session = event.session
         return MessageSession(
             platform_name="aiocqhttp",
@@ -836,7 +839,7 @@ class util(Star):
         )
 
     async def _resolve_li_persona(self, li_umo: str) -> tuple[str, str]:
-        """获取 li 的 persona，返回 (system_prompt, persona_name)。"""
+        """获取希罗的 persona，返回 (system_prompt, persona_name)。"""
         if self.li_persona_id:
             persona = self.context.persona_manager.get_persona_v3_by_id(
                 self.li_persona_id
@@ -848,31 +851,29 @@ class util(Star):
         return persona.get("prompt", ""), persona.get("name", "default")
 
     async def _resolve_li_provider_id(self, li_umo: str) -> str:
-        """获取 li 的 chat provider ID。"""
+        """获取希罗的 chat provider ID。"""
         if self.li_chat_provider_id:
             return self.li_chat_provider_id
         return await self.context.get_current_chat_provider_id(li_umo)
 
     @filter.llm_tool(name="let_li_speak")
     async def let_li_speak(self, event: AstrMessageEvent, prompt: str) -> str:
-        """让 li 以自己的人设接管对话并发送消息。
+        """当艾玛认为自己需要希罗帮忙的时候，调用此工具。希罗会以自己的人设接管对话并直接对用户说话。
 
-        当 ni 正在与用户对话但需要 li 出面说话时调用。li 会以自己的 persona 生成回复，
-        通过 li 的 bot 发送到群聊，并记录到对话历史中以保持上下文连续性。
+        艾玛应当在这个工具中向希罗传递足够的信息，包括当前发生了什么、
+        你希望希罗帮忙说什么或做什么。希罗收到后会用他自己的方式做出回应。
 
         Args:
-            prompt(str): 传递给 li 的提示词，说明当前对话背景和希望 li 说的话。
+            prompt(str): 艾玛传递给希罗的信息。告诉希罗当前情况，以及你需要他做什么。
         """
         platform_id = event.get_platform_id()
         if platform_id != "ni":
-            return (
-                f"[let_li_speak] 此工具仅限 ni 调用，当前 platform_id: {platform_id}"
-            )
+            return "希罗不在艾玛这边。"
 
         li_platform = self.context.get_platform_inst("li")
         if li_platform is None:
-            logger.error("[util] let_li_speak: 找不到 li 平台适配器")
-            return "[let_li_speak] 错误：找不到 li 平台适配器。"
+            logger.error("[util] let_li_speak: 找不到希罗的适配器")
+            return "希罗现在不在。艾玛可以再等一等，或者自己先试试。"
 
         li_session = self._build_li_session(event)
         li_umo = str(li_session)
@@ -880,14 +881,14 @@ class util(Star):
         try:
             li_system_prompt, li_persona_name = await self._resolve_li_persona(li_umo)
         except Exception as e:
-            logger.error(f"[util] let_li_speak: 获取 li persona 失败: {e}")
-            return f"[let_li_speak] 错误：获取 li persona 失败: {e}"
+            logger.error(f"[util] let_li_speak: 获取希罗 persona 失败: {e}")
+            return "希罗现在好像有点状况……艾玛不知道该怎么办。"
 
         try:
             li_provider_id = await self._resolve_li_provider_id(li_umo)
         except Exception as e:
-            logger.error(f"[util] let_li_speak: 获取 li provider_id 失败: {e}")
-            return f"[let_li_speak] 错误：获取 li provider 失败: {e}"
+            logger.error(f"[util] let_li_speak: 获取希罗 provider_id 失败: {e}")
+            return "希罗现在好像有点状况……艾玛不知道该怎么办。"
 
         li_contexts: list = []
         try:
@@ -902,7 +903,7 @@ class util(Star):
                 if conv and conv.history:
                     li_contexts = json.loads(conv.history)
         except Exception as e:
-            logger.warning(f"[util] let_li_speak: 读取 li 对话历史失败: {e}")
+            logger.warning(f"[util] let_li_speak: 读取希罗对话历史失败: {e}")
 
         try:
             llm_response = await self.context.llm_generate(
@@ -912,21 +913,21 @@ class util(Star):
                 contexts=li_contexts,
             )
         except Exception as e:
-            logger.error(f"[util] let_li_speak: LLM 生成失败: {e}")
+            logger.error(f"[util] let_li_speak: 希罗 LLM 生成失败: {e}")
             logger.error(traceback.format_exc())
-            return f"[let_li_speak] 错误：li 的 LLM 生成失败: {e}"
+            return "希罗好像说不出话了……艾玛有点着急。"
 
         li_reply_text = llm_response.completion_text
         if not li_reply_text or not li_reply_text.strip():
-            return "[let_li_speak] li 没有生成回复内容。"
+            return "希罗什么都没说。也许他觉得不需要说什么。"
 
         try:
             chain = [Comp.Plain(li_reply_text)]
             await li_platform.send_by_session(li_session, chain)
         except Exception as e:
-            logger.error(f"[util] let_li_speak: li 发送消息失败: {e}")
+            logger.error(f"[util] let_li_speak: 希罗发送消息失败: {e}")
             logger.error(traceback.format_exc())
-            return f"[let_li_speak] 错误：li 生成了一段回复但发送失败: {e}"
+            return "希罗想说话，但好像被什么挡住了……艾玛有点担心。"
 
         try:
             li_contexts.append({"role": "assistant", "content": li_reply_text})
@@ -935,10 +936,10 @@ class util(Star):
                 history=li_contexts,
             )
         except Exception as e:
-            logger.warning(f"[util] let_li_speak: 更新 li 对话历史失败: {e}")
+            logger.warning(f"[util] let_li_speak: 更新希罗对话历史失败: {e}")
 
         return (
-            f"[let_li_speak 完成] li 已以人格 '{li_persona_name}' 发送回复:\n"
+            f"希罗已经替你出面回复了，艾玛。他说的是：\n"
             f"\"{li_reply_text}\""
         )
 
@@ -1068,7 +1069,7 @@ class util(Star):
             attrs[attr_name] = attr_value
         return attrs
 
-    def _remove_history_read_tool_from_request(self, req: ProviderRequest) -> bool:
+    def _remove_tool_from_request(self, req: ProviderRequest, tool_name: str) -> bool:
         tool_set = getattr(req, "func_tool", None)
         if not tool_set:
             return False
@@ -1081,19 +1082,19 @@ class util(Star):
                 req.func_tool = tool_set
             except Exception as exc:
                 logger.warning(
-                    f"[util] failed to materialize request tool set before removing read_current_history: {exc}"
+                    f"[util] failed to materialize request tool set before removing {tool_name}: {exc}"
                 )
                 return False
 
-        detected = self._request_tool_set_has_tool(tool_set, "read_current_history")
+        detected = self._request_tool_set_has_tool(tool_set, tool_name)
         removed = False
         if hasattr(tool_set, "remove_tool"):
             try:
-                tool_set.remove_tool("read_current_history")
+                tool_set.remove_tool(tool_name)
                 removed = True
             except Exception as exc:
                 logger.warning(
-                    f"[util] failed to remove read_current_history from request tools: {exc}"
+                    f"[util] failed to remove {tool_name} from request tools: {exc}"
                 )
         else:
             tools = getattr(tool_set, "tools", None)
@@ -1101,17 +1102,20 @@ class util(Star):
                 new_tools = [
                     tool
                     for tool in tools
-                    if getattr(tool, "name", None) != "read_current_history"
+                    if getattr(tool, "name", None) != tool_name
                 ]
                 removed = len(new_tools) != len(tools)
                 tool_set.tools = new_tools
 
         if self.is_debug:
             logger.info(
-                "[util] read_current_history request-tool removal: "
+                f"[util] {tool_name} request-tool removal: "
                 f"detected={detected}, removed={removed}"
             )
         return removed
+
+    def _remove_history_read_tool_from_request(self, req: ProviderRequest) -> bool:
+        return self._remove_tool_from_request(req, "read_current_history")
 
     def _request_tool_set_has_tool(self, tool_set, tool_name: str) -> bool:
         if hasattr(tool_set, "names"):
