@@ -250,7 +250,6 @@ class util(Star):
         target_id = raw_message.get("target_id", None)
         group_id = raw_message.get("group_id", None)
         platform_id = getattr(getattr(event, "platform_meta", None), "id", None)
-        logger.info(f"platform_id:{platform_id}")
 
         if platform_id == "ni":
             responses = self.ema_poke_responses
