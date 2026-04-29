@@ -308,7 +308,7 @@ class util(Star):
             return
 
         message_text = event.message_str
-        pattern = r"\.r(\d+)?d(\d+)([+-]\d+)?"
+        pattern = r"[点。\.]r(\d+)?d(\d+)([+-]\d+)?"
         matches = re.findall(pattern, message_text)
         if not matches:
             return
