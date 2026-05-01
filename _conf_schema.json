@@ -9,7 +9,7 @@
     "description": "Custom key-value params",
     "type": "text",
     "hint": "Enter a JSON object, for example: {\"foo\": \"bar\", \"max_tokens\": 1024}",
-    "default": "{'你好':'你好'}",
+    "default": "{\n\t\"你好\":\"你好\"\n}",
     "editor_mode": true,
     "editor_language": "json",
     "editor_theme": "vs-light"
