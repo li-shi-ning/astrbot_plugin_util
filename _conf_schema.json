@@ -5,6 +5,40 @@
     "default": true,
     "hint": "true / false"
   },
+  "custom_extra_body": {
+    "description": "Custom request body params",
+    "type": "dict",
+    "items": {},
+    "hint": "Extra request parameters sent to the model provider.",
+    "template_schema": {
+      "temperature": {
+        "name": "Temperature",
+        "description": "Sampling temperature",
+        "type": "float",
+        "default": 0.7,
+        "slider": { "min": 0, "max": 2, "step": 0.1 }
+      },
+      "top_p": {
+        "name": "Top P",
+        "description": "Nucleus sampling",
+        "type": "float",
+        "default": 1.0,
+        "slider": { "min": 0, "max": 1, "step": 0.01 }
+      },
+      "max_tokens": {
+        "name": "Max Tokens",
+        "description": "Maximum output tokens",
+        "type": "int",
+        "default": 4096
+      },
+      "stream": {
+        "name": "Stream",
+        "description": "Enable streaming",
+        "type": "bool",
+        "default": false
+      }
+    }
+  },
   "enable_history_message_chunking": {
     "description": "是否对超长历史消息进行分段切割。",
     "type": "bool",

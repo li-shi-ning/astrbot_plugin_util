@@ -458,6 +458,12 @@ class util(Star):
         logger.info("\n".join(output_text))
         yield event.plain_result("\n".join(event_output_text))
 
+
+    @lishi.command("csdict")
+    async def cs_dict(self, event: AstrMessageEvent):
+        logger.info(f"[util] {self.config.get('custom_extra_body',None)}")
+        event.stop_event()
+
     @lishi.command("hibmp")
     async def get_handler_by_mp(
         self, event: AstrMessageEvent, handler_module_path: str
