@@ -5,49 +5,6 @@
     "default": true,
     "hint": "true / false"
   },
-  "custom_extra_body": {
-    "description": "Custom key-value params",
-    "type": "text",
-    "hint": "Enter a JSON object, for example: {\"foo\": \"bar\", \"max_tokens\": 1024}",
-    "default": "{\n\t\"你好\":\"你好\"\n}",
-    "editor_mode": true,
-    "editor_language": "json",
-    "editor_theme": "vs-light"
-  },
-  "advanced": {
-    "type": "object",
-    "description": "Advanced settings",
-    "items": {
-      "retry": {
-        "type": "object",
-        "description": "Retry options",
-        "items": {
-          "count": {
-            "type": "int",
-            "default": 3
-          },
-          "interval": {
-            "type": "float",
-            "default": 1.5
-          }
-        }
-      },
-      "headers": {
-        "type": "object",
-        "description": "Headers",
-        "items": {
-          "user_agent": {
-            "type": "string",
-            "default": ""
-          },
-          "content_type": {
-            "type": "string",
-            "default": "application/json"
-          }
-        }
-      }
-    }
-  },
   "enable_history_message_chunking": {
     "description": "是否对超长历史消息进行分段切割。",
     "type": "bool",
