@@ -14,6 +14,40 @@
     "editor_language": "json",
     "editor_theme": "vs-light"
   },
+  "advanced": {
+    "type": "object",
+    "description": "Advanced settings",
+    "items": {
+      "retry": {
+        "type": "object",
+        "description": "Retry options",
+        "items": {
+          "count": {
+            "type": "int",
+            "default": 3
+          },
+          "interval": {
+            "type": "float",
+            "default": 1.5
+          }
+        }
+      },
+      "headers": {
+        "type": "object",
+        "description": "Headers",
+        "items": {
+          "user_agent": {
+            "type": "string",
+            "default": ""
+          },
+          "content_type": {
+            "type": "string",
+            "default": "application/json"
+          }
+        }
+      }
+    }
+  },
   "enable_history_message_chunking": {
     "description": "是否对超长历史消息进行分段切割。",
     "type": "bool",
