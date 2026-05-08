@@ -4,6 +4,7 @@ import json
 import random
 import re
 import traceback
+import uuid
 
 import aiohttp
 
@@ -18,11 +19,12 @@ from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.provider import ProviderRequest
 from astrbot.api.star import Context, Star, register
 from astrbot.core.config import AstrBotConfig
+from astrbot.core.platform.astrbot_message import AstrBotMessage, MessageMember
+from astrbot.core.platform.message_session import MessageSession
+from astrbot.core.platform.message_type import MessageType
 from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
     AiocqhttpMessageEvent,
 )
-from astrbot.core.platform.message_session import MessageSession
-from astrbot.core.message.message_event_result import MessageChain
 from astrbot.core.star.star import star_map
 from astrbot.core.star.star_handler import EventType, star_handlers_registry
 
@@ -244,6 +246,41 @@ class util(Star):
         self.li_persona_id = config.get("li_persona_id", "").strip() or None
         self.li_chat_provider_id = config.get("li_chat_provider_id", "").strip() or None
         self.li_platform_id = config.get("li_platform_id", "").strip() or None
+        self._li_takeover_next_turn_sessions: set[str] = set()
+
+    @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
+    async def handoff_next_ni_turn_to_li(self, event: AiocqhttpMessageEvent):
+        """Forward the next ni message to Li after let_li_speak is used."""
+        if event.get_platform_id() != "ni":
+            return
+
+        session_key = self._li_takeover_session_key(event)
+        if session_key not in self._li_takeover_next_turn_sessions:
+            return
+
+        current_message = event.message_str or event.get_message_outline() or ""
+        if not current_message.strip():
+            return
+
+        self._li_takeover_next_turn_sessions.discard(session_key)
+        content = self._build_li_takeover_content(event)
+        ok, error_message = await self._dispatch_li_native_content(event, content)
+        if not ok:
+            logger.warning(
+                "[util] handoff_next_ni_turn_to_li: failed to dispatch Li event: %s",
+                error_message,
+            )
+            event.should_call_llm(True)
+            event.stop_event()
+            yield event.plain_result(error_message)
+            return
+
+        event.should_call_llm(True)
+        event.stop_event()
+        logger.info(
+            "[util] handoff_next_ni_turn_to_li: Li took over ni session %s",
+            session_key,
+        )
 
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
     @register_pack_type()
@@ -278,9 +315,7 @@ class util(Star):
                 payloads["group_id"] = group_id
             bot = getattr(event, "bot", None)
             if bot is None:
-                text = await self.weighted_random_choice(
-                    responses[:-1], weights[:-1]
-                )
+                text = await self.weighted_random_choice(responses[:-1], weights[:-1])
                 logger.info(f"机器人不是AIOCQHTTP，期望发送文本:{text}")
                 yield event.plain_result(text)
             else:
@@ -400,7 +435,9 @@ class util(Star):
             reason_display = f" {reason}" if reason else ""
             over = "(已达上限)" if len(rolls) >= MAX_TOTAL else ""
             header = f"{count}d10{a_display}{reason_display}"
-            results.append(f"{header} = {{{', '.join(die_strs)}}} = {successes}成功{over}")
+            results.append(
+                f"{header} = {{{', '.join(die_strs)}}} = {successes}成功{over}"
+            )
 
         if results:
             yield event.plain_result("\n".join(results))
@@ -840,6 +877,191 @@ class util(Star):
             session_id=ni_session.session_id,
         )
 
+    def _build_li_native_session(
+        self,
+        event: AstrMessageEvent,
+        li_platform,
+    ) -> MessageSession:
+        """Build the target Li session from the current message surface."""
+        message_type = event.get_message_type()
+        session_id = event.session.session_id
+        if message_type == MessageType.GROUP_MESSAGE:
+            session_id = event.get_group_id() or session_id.split("_")[-1]
+        elif event.get_sender_id():
+            session_id = event.get_sender_id()
+
+        return MessageSession(
+            platform_name=li_platform.meta().id,
+            message_type=message_type,
+            session_id=session_id,
+        )
+
+    def _get_li_conf(self, li_umo: str):
+        return self.context.astrbot_config_mgr.get_conf(li_umo)
+
+    def _get_effective_li_provider_wake_prefix(self, li_conf) -> str:
+        provider_settings = li_conf.get("provider_settings", {}) or {}
+        provider_wake_prefix = provider_settings.get("wake_prefix", "") or ""
+        wake_prefixes = li_conf.get("wake_prefix", []) or []
+        for wake_prefix in wake_prefixes:
+            if wake_prefix and provider_wake_prefix.startswith(wake_prefix):
+                return provider_wake_prefix[len(wake_prefix) :]
+        return provider_wake_prefix
+
+    def _li_takeover_session_key(self, event: AstrMessageEvent) -> str:
+        return str(event.unified_msg_origin)
+
+    def _build_li_event_info_text(self, event: AstrMessageEvent) -> str:
+        event_info = {
+            "platform_id": event.get_platform_id(),
+            "platform_name": event.get_platform_name(),
+            "message_type": str(event.get_message_type()),
+            "session": str(event.session),
+            "session_id": event.get_session_id(),
+            "sender_id": event.get_sender_id(),
+            "sender_name": event.get_sender_name(),
+            "group_id": event.get_group_id(),
+            "self_id": event.get_self_id(),
+            "role": getattr(event, "role", None),
+            "is_wake": getattr(event, "is_wake", None),
+            "is_at_or_wake_command": getattr(event, "is_at_or_wake_command", None),
+            "message_outline": event.get_message_outline(),
+            "message_obj": getattr(
+                event.message_obj, "__dict__", str(event.message_obj)
+            ),
+            "extras": event.get_extra(default={}),
+            "event_attrs": vars(event),
+        }
+        return self._json_dumps_for_log(event_info)
+
+    def _build_li_dialogue_content(
+        self,
+        event: AstrMessageEvent,
+        prompt: str,
+        response_summary: str = "",
+    ) -> str:
+        sender_id = event.get_sender_id() or "unknown"
+        user_message = event.message_str or event.get_message_outline() or ""
+        event_info_text = self._build_li_event_info_text(event)
+        dialogue_lines = [
+            "这是一条由艾玛通过工具调用转交给希罗的对话消息。",
+            "请希罗把它当作当前会话里的一次真实对话触发来处理，并结合希罗自己当前会话的历史记录回复。",
+            "",
+            "本轮 ni 侧对话：",
+            f"{sender_id}:{user_message}",
+        ]
+        response_summary = (response_summary or "").strip()
+        if response_summary:
+            dialogue_lines.append(f"艾玛:{response_summary}")
+        dialogue_lines.extend(
+            [
+                f"艾玛:{prompt}",
+                "",
+                "ni 侧事件信息：",
+                event_info_text,
+            ],
+        )
+        return "\n".join(dialogue_lines)
+
+    def _build_li_takeover_content(self, event: AstrMessageEvent) -> str:
+        sender_id = event.get_sender_id() or "unknown"
+        user_message = event.message_str or event.get_message_outline() or ""
+        event_info_text = self._build_li_event_info_text(event)
+        return "\n".join(
+            [
+                "这是希罗接管 ni 会话后的下一轮用户消息。",
+                "这句话原本是对艾玛（ni）说的，不是用户直接对希罗说的；请希罗理解为自己正在替艾玛接过这一轮对话。",
+                "请希罗把它当作当前会话里的一次真实对话触发来处理，并结合希罗自己当前会话的历史记录回复。",
+                "",
+                "本轮 ni 侧对话：",
+                f"{sender_id}:{user_message}",
+                "",
+                "ni 侧事件信息：",
+                event_info_text,
+            ],
+        )
+
+    def _build_li_native_prompt(
+        self,
+        li_conf,
+        event: AstrMessageEvent,
+        prompt: str,
+        response_summary: str = "",
+    ) -> str:
+        wake_prefixes = li_conf.get("wake_prefix", []) or []
+        bot_wake_prefix = next(
+            (prefix for prefix in wake_prefixes if isinstance(prefix, str) and prefix),
+            "",
+        )
+        provider_wake_prefix = self._get_effective_li_provider_wake_prefix(li_conf)
+        dialogue_content = self._build_li_dialogue_content(
+            event,
+            prompt,
+            response_summary,
+        )
+        return f"{bot_wake_prefix}{provider_wake_prefix}{dialogue_content}"
+
+    def _build_li_native_prompt_from_content(self, li_conf, content: str) -> str:
+        wake_prefixes = li_conf.get("wake_prefix", []) or []
+        bot_wake_prefix = next(
+            (prefix for prefix in wake_prefixes if isinstance(prefix, str) and prefix),
+            "",
+        )
+        provider_wake_prefix = self._get_effective_li_provider_wake_prefix(li_conf)
+        return f"{bot_wake_prefix}{provider_wake_prefix}{content}"
+
+    def _build_li_native_message(
+        self,
+        event: AstrMessageEvent,
+        li_session: MessageSession,
+        li_platform,
+        native_prompt: str,
+    ) -> AstrBotMessage:
+        abm = AstrBotMessage()
+        abm.self_id = str(
+            getattr(getattr(li_platform, "bot", None), "self_id", "")
+            or getattr(li_platform, "client_self_id", "")
+            or event.get_self_id()
+            or ""
+        )
+        abm.sender = MessageMember(
+            user_id=event.get_sender_id() or "0",
+            nickname=event.get_sender_name() or event.get_sender_id() or "unknown",
+        )
+        abm.type = li_session.message_type
+        abm.session_id = li_session.session_id
+        abm.message_id = f"util-li-native-{uuid.uuid4().hex}"
+        abm.message_str = native_prompt
+        abm.message = [Comp.Plain(native_prompt)]
+        if li_session.message_type == MessageType.GROUP_MESSAGE:
+            abm.group_id = li_session.session_id.split("_")[-1]
+            if abm.self_id:
+                abm.message.insert(0, Comp.At(qq=abm.self_id))
+
+        raw_message_type = (
+            "group"
+            if li_session.message_type == MessageType.GROUP_MESSAGE
+            else "private"
+        )
+        raw_segments = [{"type": "text", "data": {"text": native_prompt}}]
+        if li_session.message_type == MessageType.GROUP_MESSAGE and abm.self_id:
+            raw_segments.insert(0, {"type": "at", "data": {"qq": abm.self_id}})
+        abm.raw_message = {
+            "post_type": "message",
+            "message_type": raw_message_type,
+            "self_id": abm.self_id,
+            "user_id": abm.sender.user_id,
+            "group_id": abm.group_id,
+            "message_id": abm.message_id,
+            "raw_message": native_prompt,
+            "message": raw_segments,
+            "sender": {
+                "user_id": abm.sender.user_id,
+                "nickname": abm.sender.nickname or abm.sender.user_id,
+            },
+        }
+        return abm
+
     async def _resolve_li_persona(self, li_umo: str) -> tuple[str, str]:
         """获取希罗的 persona，返回 (system_prompt, persona_name)。"""
         if self.li_persona_id:
@@ -868,9 +1090,7 @@ class util(Star):
         available_ids = [
             p.meta().id for p in self.context.platform_manager.platform_insts
         ]
-        logger.info(
-            f"[util] _find_li_platform: 可用平台 ID: {available_ids}"
-        )
+        logger.info(f"[util] _find_li_platform: 可用平台 ID: {available_ids}")
 
         target = self.li_platform_id or "li"
         target_lower = target.lower()
@@ -881,8 +1101,56 @@ class util(Star):
 
         return None
 
+    async def _dispatch_li_native_content(
+        self,
+        event: AstrMessageEvent,
+        content: str,
+    ) -> tuple[bool, str]:
+        li_platform = self._find_li_platform()
+        if li_platform is None:
+            logger.error("[util] let_li_speak: 找不到希罗的适配器")
+            return False, "希罗现在不在。艾玛可以再等一等，或者自己先试试。"
+
+        if not hasattr(li_platform, "handle_msg"):
+            logger.error(
+                "[util] let_li_speak: target platform does not support native message dispatch: %s",
+                type(li_platform).__name__,
+            )
+            return False, "希罗的适配器现在不支持原生对话调用。"
+
+        li_session = self._build_li_native_session(event, li_platform)
+        li_umo = str(li_session)
+        li_conf = self._get_li_conf(li_umo)
+        native_prompt = self._build_li_native_prompt_from_content(li_conf, content)
+        li_message = self._build_li_native_message(
+            event,
+            li_session,
+            li_platform,
+            native_prompt,
+        )
+
+        try:
+            await li_platform.handle_msg(li_message)
+        except Exception as e:
+            logger.error(f"[util] let_li_speak: 投递希罗原生事件失败: {e}")
+            logger.error(traceback.format_exc())
+            return False, "希罗好像没有收到这次请求……艾玛有点着急。"
+
+        conf_info = self.context.astrbot_config_mgr.get_conf_info(li_umo)
+        logger.info(
+            "[util] let_li_speak: dispatched native Li event, umo=%s, conf=%s",
+            li_umo,
+            conf_info.get("name") or conf_info.get("id"),
+        )
+        return True, ""
+
     @filter.llm_tool(name="let_li_speak")
-    async def let_li_speak(self, event: AstrMessageEvent, prompt: str) -> str:
+    async def let_li_speak(
+        self,
+        event: AstrMessageEvent,
+        prompt: str,
+        response_summary: str = "",
+    ) -> str | None:
         """当艾玛认为自己需要希罗帮忙的时候，调用此工具。希罗会以自己的人设接管对话并直接对用户说话。
 
         艾玛应当在这个工具中向希罗传递足够的信息，包括当前发生了什么、
@@ -890,83 +1158,23 @@ class util(Star):
 
         Args:
             prompt(str): 艾玛传递给希罗的信息。告诉希罗当前情况，以及你需要她做什么。
+            response_summary(str): 艾玛简略介绍自己刚才或准备表达的回应，可留空。
         """
         platform_id = event.get_platform_id()
         if platform_id != "ni":
             return "希罗不在艾玛这边。"
 
-        li_platform = self._find_li_platform()
-        if li_platform is None:
-            logger.error("[util] let_li_speak: 找不到希罗的适配器")
-            return "希罗现在不在。艾玛可以再等一等，或者自己先试试。"
-
-        li_session = self._build_li_session(event)
-        li_umo = str(li_session)
-
-        try:
-            li_system_prompt, li_persona_name = await self._resolve_li_persona(li_umo)
-        except Exception as e:
-            logger.error(f"[util] let_li_speak: 获取希罗 persona 失败: {e}")
-            return "希罗现在好像有点状况……艾玛不知道该怎么办。"
-
-        try:
-            li_provider_id = await self._resolve_li_provider_id(li_umo)
-        except Exception as e:
-            logger.error(f"[util] let_li_speak: 获取希罗 provider_id 失败: {e}")
-            return "希罗现在好像有点状况……艾玛不知道该怎么办。"
-
-        li_contexts: list = []
-        try:
-            conv_id = await self.context.conversation_manager.get_curr_conversation_id(
-                li_umo
-            )
-            if conv_id:
-                conv = await self.context.conversation_manager.get_conversation(
-                    unified_msg_origin=li_umo,
-                    conversation_id=conv_id,
-                )
-                if conv and conv.history:
-                    li_contexts = json.loads(conv.history)
-        except Exception as e:
-            logger.warning(f"[util] let_li_speak: 读取希罗对话历史失败: {e}")
-
-        try:
-            llm_response = await self.context.llm_generate(
-                chat_provider_id=li_provider_id,
-                prompt=prompt,
-                system_prompt=li_system_prompt,
-                contexts=li_contexts,
-            )
-        except Exception as e:
-            logger.error(f"[util] let_li_speak: 希罗 LLM 生成失败: {e}")
-            logger.error(traceback.format_exc())
-            return "希罗好像说不出话了……艾玛有点着急。"
-
-        li_reply_text = llm_response.completion_text
-        if not li_reply_text or not li_reply_text.strip():
-            return "希罗什么都没说。也许她觉得不需要说什么。"
-
-        try:
-            chain = MessageChain(chain=[Comp.Plain(li_reply_text)])
-            await li_platform.send_by_session(li_session, chain)
-        except Exception as e:
-            logger.error(f"[util] let_li_speak: 希罗发送消息失败: {e}")
-            logger.error(traceback.format_exc())
-            return "希罗想说话，但好像被什么挡住了……艾玛有点担心。"
-
-        try:
-            li_contexts.append({"role": "assistant", "content": li_reply_text})
-            await self.context.conversation_manager.update_conversation(
-                unified_msg_origin=li_umo,
-                history=li_contexts,
-            )
-        except Exception as e:
-            logger.warning(f"[util] let_li_speak: 更新希罗对话历史失败: {e}")
-
-        return (
-            f"希罗已经替你出面回复了，艾玛。她说的是：\n"
-            f"\"{li_reply_text}\""
+        content = self._build_li_dialogue_content(
+            event,
+            prompt,
+            response_summary,
         )
+        ok, error_message = await self._dispatch_li_native_content(event, content)
+        if not ok:
+            return error_message
+
+        self._li_takeover_next_turn_sessions.add(self._li_takeover_session_key(event))
+        return None
 
     @filter.llm_tool(name="read_current_history")
     async def read_current_history(
@@ -1125,9 +1333,7 @@ class util(Star):
             tools = getattr(tool_set, "tools", None)
             if isinstance(tools, list):
                 new_tools = [
-                    tool
-                    for tool in tools
-                    if getattr(tool, "name", None) != tool_name
+                    tool for tool in tools if getattr(tool, "name", None) != tool_name
                 ]
                 removed = len(new_tools) != len(tools)
                 tool_set.tools = new_tools
