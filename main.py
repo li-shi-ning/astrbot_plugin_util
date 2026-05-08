@@ -246,7 +246,7 @@ class util(Star):
         self.li_persona_id = config.get("li_persona_id", "").strip() or None
         self.li_chat_provider_id = config.get("li_chat_provider_id", "").strip() or None
         self.li_platform_id = config.get("li_platform_id", "").strip() or None
-        self._li_takeover_next_turn_sessions: set[str] = set()
+        self._li_takeover_next_turn_keys: set[str] = set()
 
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
     async def handoff_next_ni_turn_to_li(self, event: AiocqhttpMessageEvent):
@@ -254,15 +254,18 @@ class util(Star):
         if event.get_platform_id() != "ni":
             return
 
-        session_key = self._li_takeover_session_key(event)
-        if session_key not in self._li_takeover_next_turn_sessions:
+        takeover_key = self._li_takeover_key(event)
+        if takeover_key not in self._li_takeover_next_turn_keys:
+            return
+
+        if not event.is_at_or_wake_command:
             return
 
         current_message = event.message_str or event.get_message_outline() or ""
         if not current_message.strip():
             return
 
-        self._li_takeover_next_turn_sessions.discard(session_key)
+        self._li_takeover_next_turn_keys.discard(takeover_key)
         content = self._build_li_takeover_content(event)
         ok, error_message = await self._dispatch_li_native_content(event, content)
         if not ok:
@@ -278,8 +281,8 @@ class util(Star):
         event.should_call_llm(True)
         event.stop_event()
         logger.info(
-            "[util] handoff_next_ni_turn_to_li: Li took over ni session %s",
-            session_key,
+            "[util] handoff_next_ni_turn_to_li: Li took over ni turn %s",
+            takeover_key,
         )
 
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
@@ -908,8 +911,9 @@ class util(Star):
                 return provider_wake_prefix[len(wake_prefix) :]
         return provider_wake_prefix
 
-    def _li_takeover_session_key(self, event: AstrMessageEvent) -> str:
-        return str(event.unified_msg_origin)
+    def _li_takeover_key(self, event: AstrMessageEvent) -> str:
+        sender_id = event.get_sender_id() or "unknown"
+        return f"{event.unified_msg_origin}:sender:{sender_id}"
 
     def _build_li_event_info_text(self, event: AstrMessageEvent) -> str:
         event_info = {
@@ -1173,7 +1177,12 @@ class util(Star):
         if not ok:
             return error_message
 
-        self._li_takeover_next_turn_sessions.add(self._li_takeover_session_key(event))
+        takeover_key = self._li_takeover_key(event)
+        self._li_takeover_next_turn_keys.add(takeover_key)
+        logger.info(
+            "[util] let_li_speak: armed next-turn Li takeover for %s",
+            takeover_key,
+        )
         return None
 
     @filter.llm_tool(name="read_current_history")
