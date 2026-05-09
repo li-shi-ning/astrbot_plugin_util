@@ -71,18 +71,6 @@
     "default": 1.2,
     "hint": "1.2"
   },
-  "li_persona_id": {
-    "description": "希罗的人格 ID（Persona ID）。留空则自动获取默认人格。",
-    "type": "string",
-    "default": "",
-    "hint": "留空自动获取"
-  },
-  "li_chat_provider_id": {
-    "description": "希罗使用的聊天模型 Provider ID。留空则自动获取。",
-    "type": "string",
-    "default": "",
-    "hint": "留空自动获取"
-  },
   "li_platform_id": {
     "description": "希罗在 AstrBot 中的平台 ID。留空则尝试自动匹配 'li'（忽略大小写）。",
     "type": "string",

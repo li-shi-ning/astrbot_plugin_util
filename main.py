@@ -243,10 +243,9 @@ class util(Star):
             self.stream_delay_min_seconds,
             float(config.get("stream_delay_max_seconds", 1.2)),
         )
-        self.li_persona_id = config.get("li_persona_id", "").strip() or None
-        self.li_chat_provider_id = config.get("li_chat_provider_id", "").strip() or None
         self.li_platform_id = config.get("li_platform_id", "").strip() or None
         self._li_takeover_next_turn_keys: set[str] = set()
+        self._li_reply_capture_futures: dict[str, asyncio.Future[str]] = {}
 
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
     async def handoff_next_ni_turn_to_li(self, event: AiocqhttpMessageEvent):
@@ -267,7 +266,7 @@ class util(Star):
 
         self._li_takeover_next_turn_keys.discard(takeover_key)
         content = self._build_li_takeover_content(event)
-        ok, error_message = await self._dispatch_li_native_content(event, content)
+        ok, error_message, _ = await self._dispatch_li_native_content(event, content)
         if not ok:
             logger.warning(
                 "[util] handoff_next_ni_turn_to_li: failed to dispatch Li event: %s",
@@ -1066,24 +1065,6 @@ class util(Star):
         }
         return abm
 
-    async def _resolve_li_persona(self, li_umo: str) -> tuple[str, str]:
-        """获取希罗的 persona，返回 (system_prompt, persona_name)。"""
-        if self.li_persona_id:
-            persona = self.context.persona_manager.get_persona_v3_by_id(
-                self.li_persona_id
-            )
-            if persona and persona.get("prompt"):
-                return persona["prompt"], persona.get("name", self.li_persona_id)
-
-        persona = await self.context.persona_manager.get_default_persona_v3(li_umo)
-        return persona.get("prompt", ""), persona.get("name", "default")
-
-    async def _resolve_li_provider_id(self, li_umo: str) -> str:
-        """获取希罗的 chat provider ID。"""
-        if self.li_chat_provider_id:
-            return self.li_chat_provider_id
-        return await self.context.get_current_chat_provider_id(li_umo)
-
     def _find_li_platform(self):
         """查找希罗的平台适配器，优先使用配置的 ID，否则大小写不敏感匹配。"""
         if self.li_platform_id:
@@ -1109,18 +1090,19 @@ class util(Star):
         self,
         event: AstrMessageEvent,
         content: str,
-    ) -> tuple[bool, str]:
+        capture_reply: bool = False,
+    ) -> tuple[bool, str, asyncio.Future[str] | None]:
         li_platform = self._find_li_platform()
         if li_platform is None:
             logger.error("[util] let_li_speak: 找不到希罗的适配器")
-            return False, "希罗现在不在。艾玛可以再等一等，或者自己先试试。"
+            return False, "希罗现在不在。艾玛可以再等一等，或者自己先试试。", None
 
         if not hasattr(li_platform, "handle_msg"):
             logger.error(
                 "[util] let_li_speak: target platform does not support native message dispatch: %s",
                 type(li_platform).__name__,
             )
-            return False, "希罗的适配器现在不支持原生对话调用。"
+            return False, "希罗的适配器现在不支持原生对话调用。", None
 
         li_session = self._build_li_native_session(event, li_platform)
         li_umo = str(li_session)
@@ -1132,13 +1114,18 @@ class util(Star):
             li_platform,
             native_prompt,
         )
+        reply_future = None
+        if capture_reply:
+            reply_future = asyncio.get_running_loop().create_future()
+            self._li_reply_capture_futures[li_message.message_id] = reply_future
 
         try:
             await li_platform.handle_msg(li_message)
         except Exception as e:
+            self._li_reply_capture_futures.pop(li_message.message_id, None)
             logger.error(f"[util] let_li_speak: 投递希罗原生事件失败: {e}")
             logger.error(traceback.format_exc())
-            return False, "希罗好像没有收到这次请求……艾玛有点着急。"
+            return False, "希罗好像没有收到这次请求……艾玛有点着急。", None
 
         conf_info = self.context.astrbot_config_mgr.get_conf_info(li_umo)
         logger.info(
@@ -1146,7 +1133,41 @@ class util(Star):
             li_umo,
             conf_info.get("name") or conf_info.get("id"),
         )
-        return True, ""
+        return True, "", reply_future
+
+    @filter.after_message_sent()
+    async def capture_li_native_reply(self, event: AstrMessageEvent):
+        message_obj = getattr(event, "message_obj", None)
+        message_id = getattr(message_obj, "message_id", None)
+        if not message_id:
+            return
+
+        reply_future = self._li_reply_capture_futures.pop(str(message_id), None)
+        if reply_future is None or reply_future.done():
+            return
+
+        result = event.get_result()
+        reply_text = self._message_chain_to_text(getattr(result, "chain", []))
+        reply_future.set_result(reply_text)
+
+    def _message_chain_to_text(self, chain) -> str:
+        parts: list[str] = []
+        for comp in chain or []:
+            text = getattr(comp, "text", None)
+            if text:
+                parts.append(str(text))
+                continue
+
+            comp_type = str(getattr(comp, "type", "")).lower()
+            if "image" in comp_type:
+                parts.append("[图片]")
+            elif "record" in comp_type:
+                parts.append("[语音]")
+            elif "video" in comp_type:
+                parts.append("[视频]")
+            elif "file" in comp_type:
+                parts.append("[文件]")
+        return "\n".join(parts).strip()
 
     @filter.llm_tool(name="let_li_speak")
     async def let_li_speak(
@@ -1173,7 +1194,11 @@ class util(Star):
             prompt,
             response_summary,
         )
-        ok, error_message = await self._dispatch_li_native_content(event, content)
+        ok, error_message, reply_future = await self._dispatch_li_native_content(
+            event,
+            content,
+            capture_reply=True,
+        )
         if not ok:
             return error_message
 
@@ -1183,7 +1208,23 @@ class util(Star):
             "[util] let_li_speak: armed next-turn Li takeover for %s",
             takeover_key,
         )
-        return None
+        if reply_future is None:
+            return "已经把请求交给希罗，但没有拿到希罗的回复。"
+
+        try:
+            li_reply = await asyncio.wait_for(reply_future, timeout=100)
+        except TimeoutError:
+            for message_id, future in list(self._li_reply_capture_futures.items()):
+                if future is reply_future:
+                    self._li_reply_capture_futures.pop(message_id, None)
+                    break
+            return "已经把请求交给希罗，但等待希罗回复超时了。"
+
+        if not li_reply.strip():
+            return "希罗已经处理了这次请求，但没有返回可读文本。"
+        return (
+            f"希罗已经直接回复用户：{li_reply}\n艾玛不要复述这句话，除非用户继续追问。"
+        )
 
     @filter.llm_tool(name="read_current_history")
     async def read_current_history(
