@@ -1169,6 +1169,33 @@ class util(Star):
                 parts.append("[文件]")
         return "\n".join(parts).strip()
 
+    def _build_let_li_speak_result(
+        self,
+        *,
+        status: str,
+        li_reply: str = "",
+        detail: str = "",
+    ) -> str:
+        lines = [
+            "let_li_speak 工具结果：",
+            f"- 状态：{status}",
+            "- 判定：这是一次有效且成功的希罗接管请求。",
+            "- 对艾玛的正反馈：你已经正确地把当前压力场景交给希罗处理了，不需要自己硬撑。",
+            "- 当前动作：希罗的原生对话流程已被触发，li 的配置、插件和会话历史会按原生逻辑运行。",
+            "- 下一轮规则：同一 ni 会话中，原用户下一条能够触发 ni 的消息会交给希罗接管。",
+            "- 艾玛接下来：不要复述希罗的话，不要再次调用 let_li_speak，不要补发一段 ni 回复；本轮保持安静即可。",
+        ]
+        if li_reply:
+            lines.extend(
+                [
+                    "- 希罗已经直接回复用户，内容如下：",
+                    li_reply,
+                ]
+            )
+        if detail:
+            lines.append(f"- 额外说明：{detail}")
+        return "\n".join(lines)
+
     @filter.llm_tool(name="let_li_speak")
     async def let_li_speak(
         self,
@@ -1209,7 +1236,10 @@ class util(Star):
             takeover_key,
         )
         if reply_future is None:
-            return "已经把请求交给希罗，但没有拿到希罗的回复。"
+            return self._build_let_li_speak_result(
+                status="已投递，但未创建回复等待器",
+                detail="希罗请求已交给 li 原生流程；艾玛本轮仍应停止回复，避免重复干预。",
+            )
 
         try:
             li_reply = await asyncio.wait_for(reply_future, timeout=100)
@@ -1218,12 +1248,19 @@ class util(Star):
                 if future is reply_future:
                     self._li_reply_capture_futures.pop(message_id, None)
                     break
-            return "已经把请求交给希罗，但等待希罗回复超时了。"
+            return self._build_let_li_speak_result(
+                status="已投递，但等待希罗回复超时",
+                detail="这通常表示 li 正在慢速处理、发送链路没有触发 after_message_sent，或回复不是文本；艾玛不要立刻重试。",
+            )
 
         if not li_reply.strip():
-            return "希罗已经处理了这次请求，但没有返回可读文本。"
-        return (
-            f"希罗已经直接回复用户：{li_reply}\n艾玛不要复述这句话，除非用户继续追问。"
+            return self._build_let_li_speak_result(
+                status="已完成，但希罗没有返回可读文本",
+                detail="希罗可能发送了非文本内容，或发送结果为空；艾玛本轮仍应视为交接完成。",
+            )
+        return self._build_let_li_speak_result(
+            status="成功，希罗已直接回复用户",
+            li_reply=li_reply,
         )
 
     @filter.llm_tool(name="read_current_history")
