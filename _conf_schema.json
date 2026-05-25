@@ -1,80 +1,132 @@
 {
-  "enable_history_chunking_feature": {
-    "description": "是否启用历史消息切割整套功能。关闭后不会切割 req.contexts，也不会让 read_current_history 工具返回历史片段。",
-    "type": "bool",
-    "default": true,
-    "hint": "true / false"
+  "history_chunking": {
+    "description": "历史消息切割与读取工具",
+    "type": "object",
+    "hint": "历史消息切割与 read_current_history 工具相关配置",
+    "items": {
+      "enable_history_chunking_feature": {
+        "description": "是否启用历史消息切割整套功能。关闭后不会切割 req.contexts，也不会让 read_current_history 工具返回历史片段。",
+        "type": "bool",
+        "default": true,
+        "hint": "true / false"
+      },
+      "enable_history_message_chunking": {
+        "description": "是否对超长历史消息进行分段切割。",
+        "type": "bool",
+        "default": true,
+        "hint": "true / false"
+      },
+      "history_message_chunk_length": {
+        "description": "启用切割后，每段历史消息的最大字符数。",
+        "type": "int",
+        "default": 100,
+        "hint": "100"
+      },
+      "enable_history_read_tool": {
+        "description": "是否向大模型暴露 read_current_history 历史读取工具。",
+        "type": "bool",
+        "default": true,
+        "hint": "true / false"
+      },
+      "remove_history_read_tool_before_llm": {
+        "description": "是否在请求大模型前从本轮工具集中移除 read_current_history。开启后会检测该工具是否存在，即使它未激活也会尝试按名称移除。",
+        "type": "bool",
+        "default": false,
+        "hint": "true / false"
+      },
+      "history_read_tool_default_count": {
+        "description": "历史读取工具默认每页读取的历史条数。",
+        "type": "int",
+        "default": 6,
+        "hint": "6"
+      }
+    }
   },
-  "enable_history_message_chunking": {
-    "description": "是否对超长历史消息进行分段切割。",
-    "type": "bool",
-    "default": true,
-    "hint": "true / false"
+  "stream_output": {
+    "description": "输出流重整与发送方式",
+    "type": "object",
+    "hint": "逐句发送、随机间隔、合并转发打包发送相关配置",
+    "items": {
+      "enable_human_like_stream_delay": {
+        "description": "是否在逐句发送时加入随机停顿，模拟真人聊天节奏。",
+        "type": "bool",
+        "default": true,
+        "hint": "true / false"
+      },
+      "stream_delay_min_seconds": {
+        "description": "逐句发送的最小随机停顿秒数。",
+        "type": "float",
+        "default": 0.35,
+        "hint": "0.35"
+      },
+      "stream_delay_max_seconds": {
+        "description": "逐句发送的最大随机停顿秒数。",
+        "type": "float",
+        "default": 1.2,
+        "hint": "1.2"
+      },
+      "enable_forward_when_too_long": {
+        "description": "是否在重整后的文本总字数达到阈值时使用合并转发打包发送。",
+        "type": "bool",
+        "default": false,
+        "hint": "true / false"
+      },
+      "forward_text_length_threshold": {
+        "description": "开启字数阈值打包发送后，重整后的文本总字数达到该值时改用合并转发。",
+        "type": "int",
+        "default": 200,
+        "hint": "200"
+      },
+      "enable_forward_when_too_many_segments": {
+        "description": "是否在重整后分段数量达到阈值时使用合并转发打包发送。",
+        "type": "bool",
+        "default": false,
+        "hint": "true / false"
+      },
+      "forward_segment_count_threshold": {
+        "description": "开启分段数量阈值打包发送后，重整出的分段数量达到该值时改用合并转发。",
+        "type": "int",
+        "default": 5,
+        "hint": "5"
+      }
+    }
   },
-  "history_message_chunk_length": {
-    "description": "启用切割后，每段历史消息的最大字符数。",
-    "type": "int",
-    "default": 100,
-    "hint": "100"
+  "debug_logging": {
+    "description": "调试日志",
+    "type": "object",
+    "hint": "请求大模型前的输入与历史日志配置，可能包含隐私内容",
+    "items": {
+      "enable_llm_request_debug_log": {
+        "description": "是否在 LLM 请求前打印 ProviderRequest 的调试元数据。日志可能包含隐私内容，建议仅调试时开启。",
+        "type": "bool",
+        "default": false,
+        "hint": "true / false"
+      },
+      "enable_final_history_log": {
+        "description": "是否在 LLM 请求前打印最终输入模型的完整历史。日志可能很长且包含隐私内容，建议仅调试时开启。",
+        "type": "bool",
+        "default": false,
+        "hint": "true / false"
+      },
+      "enable_full_provider_request_log": {
+        "description": "是否在 LLM 请求前打印 ProviderRequest 的全部公开属性快照。日志可能很长且包含隐私内容，建议仅调试时开启。",
+        "type": "bool",
+        "default": false,
+        "hint": "true / false"
+      }
+    }
   },
-  "enable_history_read_tool": {
-    "description": "是否向大模型暴露 read_current_history 历史读取工具。",
-    "type": "bool",
-    "default": true,
-    "hint": "true / false"
-  },
-  "remove_history_read_tool_before_llm": {
-    "description": "是否在请求大模型前从本轮工具集中移除 read_current_history。开启后会检测该工具是否存在，即使它未激活也会尝试按名称移除。",
-    "type": "bool",
-    "default": false,
-    "hint": "true / false"
-  },
-  "history_read_tool_default_count": {
-    "description": "历史读取工具默认每页读取的历史条数。",
-    "type": "int",
-    "default": 6,
-    "hint": "6"
-  },
-  "enable_human_like_stream_delay": {
-    "description": "是否在逐句发送时加入随机停顿，模拟真人聊天节奏。",
-    "type": "bool",
-    "default": true,
-    "hint": "true / false"
-  },
-  "enable_llm_request_debug_log": {
-    "description": "是否在 LLM 请求前打印 ProviderRequest 的调试元数据。日志可能包含隐私内容，建议仅调试时开启。",
-    "type": "bool",
-    "default": false,
-    "hint": "true / false"
-  },
-  "enable_final_history_log": {
-    "description": "是否在 LLM 请求前打印最终输入模型的完整历史。日志可能很长且包含隐私内容，建议仅调试时开启。",
-    "type": "bool",
-    "default": false,
-    "hint": "true / false"
-  },
-  "enable_full_provider_request_log": {
-    "description": "是否在 LLM 请求前打印 ProviderRequest 的全部公开属性快照。日志可能很长且包含隐私内容，建议仅调试时开启。",
-    "type": "bool",
-    "default": false,
-    "hint": "true / false"
-  },
-  "stream_delay_min_seconds": {
-    "description": "逐句发送的最小随机停顿秒数。",
-    "type": "float",
-    "default": 0.35,
-    "hint": "0.35"
-  },
-  "stream_delay_max_seconds": {
-    "description": "逐句发送的最大随机停顿秒数。",
-    "type": "float",
-    "default": 1.2,
-    "hint": "1.2"
-  },
-  "li_platform_id": {
-    "description": "希罗在 AstrBot 中的平台 ID。留空则尝试自动匹配 'li'（忽略大小写）。",
-    "type": "string",
-    "default": "",
-    "hint": "如 'li'、'Li'，留空自动匹配"
+  "li_handoff": {
+    "description": "希罗交接",
+    "type": "object",
+    "hint": "let_li_speak 与下一轮希罗接管相关配置",
+    "items": {
+      "li_platform_id": {
+        "description": "希罗在 AstrBot 中的平台 ID。留空则尝试自动匹配 'li'（忽略大小写）。",
+        "type": "string",
+        "default": "",
+        "hint": "如 'li'、'Li'，留空自动匹配"
+      }
+    }
   }
 }

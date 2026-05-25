@@ -5,6 +5,7 @@ import random
 import re
 import traceback
 import uuid
+from collections.abc import Mapping
 
 import aiohttp
 
@@ -200,50 +201,98 @@ class util(Star):
         }
         self.no_split_keywords = ("zssm", "这是什么")
 
-        self.enable_history_chunking_feature = config.get(
+        def config_section(name: str) -> dict:
+            value = config.get(name, {})
+            return dict(value) if isinstance(value, Mapping) else {}
+
+        def config_value(section_config: dict, key: str, default):
+            if key in section_config:
+                return section_config.get(key, default)
+            return config.get(key, default)
+
+        history_config = config_section("history_chunking")
+        stream_config = config_section("stream_output")
+        debug_config = config_section("debug_logging")
+        li_config = config_section("li_handoff")
+
+        self.enable_history_chunking_feature = config_value(
+            history_config,
             "enable_history_chunking_feature",
             True,
         )
-        self.enable_history_message_chunking = config.get(
+        self.enable_history_message_chunking = config_value(
+            history_config,
             "enable_history_message_chunking",
             True,
         )
         self.history_message_chunk_length = max(
             1,
-            int(config.get("history_message_chunk_length", 100)),
+            int(config_value(history_config, "history_message_chunk_length", 100)),
         )
-        self.enable_history_read_tool = config.get("enable_history_read_tool", True)
-        self.remove_history_read_tool_before_llm = config.get(
+        self.enable_history_read_tool = config_value(
+            history_config,
+            "enable_history_read_tool",
+            True,
+        )
+        self.remove_history_read_tool_before_llm = config_value(
+            history_config,
             "remove_history_read_tool_before_llm",
             False,
         )
         self.history_read_tool_default_count = max(
             1,
-            int(config.get("history_read_tool_default_count", 6)),
+            int(config_value(history_config, "history_read_tool_default_count", 6)),
         )
-        self.enable_human_like_stream_delay = config.get(
+        self.enable_human_like_stream_delay = config_value(
+            stream_config,
             "enable_human_like_stream_delay",
             True,
         )
-        self.enable_llm_request_debug_log = config.get(
+        self.enable_forward_when_too_long = config_value(
+            stream_config,
+            "enable_forward_when_too_long",
+            False,
+        )
+        self.forward_text_length_threshold = max(
+            1,
+            int(config_value(stream_config, "forward_text_length_threshold", 200)),
+        )
+        self.enable_forward_when_too_many_segments = config_value(
+            stream_config,
+            "enable_forward_when_too_many_segments",
+            False,
+        )
+        self.forward_segment_count_threshold = max(
+            1,
+            int(config_value(stream_config, "forward_segment_count_threshold", 5)),
+        )
+        self.enable_llm_request_debug_log = config_value(
+            debug_config,
             "enable_llm_request_debug_log",
             False,
         )
-        self.enable_final_history_log = config.get("enable_final_history_log", False)
-        self.enable_full_provider_request_log = config.get(
+        self.enable_final_history_log = config_value(
+            debug_config,
+            "enable_final_history_log",
+            False,
+        )
+        self.enable_full_provider_request_log = config_value(
+            debug_config,
             "enable_full_provider_request_log",
             False,
         )
         self._scoped_request_history_cache: dict[str, list[str]] = {}
         self.stream_delay_min_seconds = max(
             0.0,
-            float(config.get("stream_delay_min_seconds", 0.35)),
+            float(config_value(stream_config, "stream_delay_min_seconds", 0.35)),
         )
         self.stream_delay_max_seconds = max(
             self.stream_delay_min_seconds,
-            float(config.get("stream_delay_max_seconds", 1.2)),
+            float(config_value(stream_config, "stream_delay_max_seconds", 1.2)),
         )
-        self.li_platform_id = config.get("li_platform_id", "").strip() or None
+        self.li_platform_id = (
+            config_value(li_config, "li_platform_id", "").strip() or None
+        )
         self._li_takeover_next_turn_keys: set[str] = set()
         self._li_reply_capture_futures: dict[str, asyncio.Future[str]] = {}
 
@@ -1337,12 +1386,67 @@ class util(Star):
             logger.info(
                 f"[util] 智能分割完成，行数={len(output_lines)}, 行内容={json.dumps(output_lines, ensure_ascii=False)}"
             )
+        if self._should_forward_split_output(output_lines):
+            if self.is_debug:
+                logger.info(
+                    "[util] 分割结果达到打包发送阈值，改用合并转发发送: "
+                    f"text_length={sum(len(line) for line in output_lines)}, "
+                    f"segments={len(output_lines)}"
+                )
+            try:
+                await self._send_split_lines_as_forward(event, output_lines)
+            except Exception as exc:
+                logger.error(f"[util] 合并转发发送失败，回退逐句发送: {exc}")
+                await self._send_split_lines_one_by_one(event, output_lines)
+            event.clear_result()
+            return
+
+        await self._send_split_lines_one_by_one(event, output_lines)
+        event.clear_result()
+
+    def _should_forward_split_output(self, output_lines: list[str]) -> bool:
+        text_length = sum(len(line) for line in output_lines)
+        if (
+            self.enable_forward_when_too_long
+            and text_length >= self.forward_text_length_threshold
+        ):
+            return True
+        return (
+            self.enable_forward_when_too_many_segments
+            and len(output_lines) >= self.forward_segment_count_threshold
+        )
+
+    async def _send_split_lines_as_forward(
+        self,
+        event: AstrMessageEvent,
+        output_lines: list[str],
+    ) -> None:
+        node_name = "艾玛"
+        node_uin = str(event.get_self_id() or "0")
+        nodes = [
+            Comp.Node(
+                name=node_name,
+                uin=node_uin,
+                content=[Comp.Plain(line)],
+            )
+            for line in output_lines
+            if line.strip()
+        ]
+        if not nodes:
+            return
+
+        await event.send(event.chain_result([Comp.Nodes(nodes=nodes)]))
+
+    async def _send_split_lines_one_by_one(
+        self,
+        event: AstrMessageEvent,
+        output_lines: list[str],
+    ) -> None:
         for line in output_lines:
             if self.is_debug:
                 logger.info(f"[util] 发送分割后的行: {line}")
             await event.send(event.plain_result(line))
             await self._sleep_like_human_chat(line)
-        event.clear_result()
 
     def _provider_request_metadata_without_prompts(
         self,
