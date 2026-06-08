@@ -290,6 +290,11 @@ class util(Star):
             self.stream_delay_min_seconds,
             float(config_value(stream_config, "stream_delay_max_seconds", 1.2)),
         )
+        self.enable_let_li_speak_tool = config_value(
+            li_config,
+            "enable_let_li_speak_tool",
+            True,
+        )
         self.li_platform_id = (
             config_value(li_config, "li_platform_id", "").strip() or None
         )
@@ -299,6 +304,9 @@ class util(Star):
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
     async def handoff_next_ni_turn_to_li(self, event: AiocqhttpMessageEvent):
         """Forward the next ni message to Li after let_li_speak is used."""
+        if not self.enable_let_li_speak_tool:
+            return
+
         if event.get_platform_id() != "ni":
             return
 
@@ -866,7 +874,7 @@ class util(Star):
         if self.remove_history_read_tool_before_llm:
             self._remove_history_read_tool_from_request(req)
 
-        if event.get_platform_id() != "ni":
+        if event.get_platform_id() != "ni" or not self.enable_let_li_speak_tool:
             self._remove_tool_from_request(req, "let_li_speak")
 
         if not self.enable_history_chunking_feature:
@@ -1261,6 +1269,9 @@ class util(Star):
             prompt(str): 艾玛传递给希罗的信息。告诉希罗当前情况，以及你需要她做什么。
             response_summary(str): 艾玛简略介绍自己刚才或准备表达的回应，可留空。
         """
+        if not self.enable_let_li_speak_tool:
+            return "let_li_speak 工具已被配置禁用。"
+
         platform_id = event.get_platform_id()
         if platform_id != "ni":
             return "希罗不在艾玛这边。"

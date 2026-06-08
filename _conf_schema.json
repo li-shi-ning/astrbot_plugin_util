@@ -121,6 +121,12 @@
     "type": "object",
     "hint": "let_li_speak 与下一轮希罗接管相关配置",
     "items": {
+      "enable_let_li_speak_tool": {
+        "description": "是否向 ni 的大模型暴露 let_li_speak 工具，并允许艾玛触发希罗原生对话流程。关闭后不会再向模型提供该工具，已存在的工具调用也会被拒绝。",
+        "type": "bool",
+        "default": true,
+        "hint": "true / false"
+      },
       "li_platform_id": {
         "description": "希罗在 AstrBot 中的平台 ID。留空则尝试自动匹配 'li'（忽略大小写）。",
         "type": "string",
