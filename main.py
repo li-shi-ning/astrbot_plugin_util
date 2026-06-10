@@ -7,8 +7,6 @@ import traceback
 import uuid
 from collections.abc import Mapping
 
-import aiohttp
-
 # ====== 第三方库 ======
 import numpy as np
 
@@ -195,10 +193,6 @@ class util(Star):
             "无聊": [8, 25, 285, 293],
         }
 
-        self.tts_id = {
-            "ema": "486bd7ee-a273-4e3d-a02a-e0dfc880cbe2",
-            "hiro": "a9a59749-1904-4136-a409-5e4aea7d4e0d",
-        }
         self.no_split_keywords = ("zssm", "这是什么")
 
         def config_section(name: str) -> dict:
@@ -398,108 +392,6 @@ class util(Star):
             return
         payloads = {"message_id": message_id, "emoji_id": emoji_id}
         await bot.api.call_action("set_msg_emoji_like", **payloads)
-
-    @filter.regex(r"[点。\.]r\d*d\d+")
-    async def dice_roll(self, event: AstrMessageEvent):
-        """检测骰子语法并投掷，仅对 ni 开放"""
-        platform_id = getattr(getattr(event, "platform_meta", None), "id", None)
-        if platform_id != "ni":
-            return
-
-        message_text = event.message_str
-        pattern = r"[点。\.]r(\d+)?d(\d+)([+-]\d+)?"
-        matches = re.findall(pattern, message_text)
-        if not matches:
-            return
-
-        results = []
-        for count_str, sides_str, modifier_str in matches:
-            count = int(count_str) if count_str else 1
-            sides = int(sides_str)
-            modifier = int(modifier_str) if modifier_str else 0
-
-            if count < 1 or count > 100:
-                continue
-            if sides < 2 or sides > 1000:
-                continue
-
-            rolls = [random.randint(1, sides) for _ in range(count)]
-            total = sum(rolls) + modifier
-            roll_detail = " + ".join(map(str, rolls))
-            modifier_display = modifier_str if modifier_str else ""
-
-            if count == 1 and modifier == 0:
-                results.append(f"1d{sides} = {total}")
-            elif count == 1:
-                results.append(
-                    f"1d{sides}{modifier_display} = {rolls[0]}{modifier_display} = {total}"
-                )
-            elif modifier == 0:
-                results.append(f"{count}d{sides} = {roll_detail} = {total}")
-            else:
-                results.append(
-                    f"{count}d{sides}{modifier_display} = {roll_detail}{modifier_display} = {total}"
-                )
-
-        if results:
-            yield event.plain_result("\n".join(results))
-
-    @filter.regex(r"[点。\.]ww")
-    async def ww_dice(self, event: AstrMessageEvent):
-        """无限团骰子(.ww)，仅对 ni 开放"""
-        platform_id = getattr(getattr(event, "platform_meta", None), "id", None)
-        if platform_id != "ni":
-            return
-
-        message_text = event.message_str
-        pattern = r"[点。\.]ww\s*(\d+)(?:\s*a\s*(\d+))?(?:\s+(.+))?"
-        matches = re.findall(pattern, message_text)
-        if not matches:
-            return
-
-        results = []
-        for count_str, a_str, reason in matches:
-            count = int(count_str)
-            a_value = int(a_str) if a_str else 10
-
-            if count < 1 or count > 100:
-                continue
-            if a_value < 5 or a_value > 10:
-                continue
-
-            MAX_TOTAL = 200
-            rolls = []
-            queue = [random.randint(1, 10) for _ in range(count)]
-
-            while queue and len(rolls) < MAX_TOTAL:
-                die = queue.pop(0)
-                if die >= a_value:
-                    queue.append(random.randint(1, 10))
-                rolls.append(die)
-
-            die_strs = []
-            successes = 0
-            for i, die in enumerate(rolls):
-                marks = ""
-                if die >= 8:
-                    successes += 1
-                    marks += "*"
-                if die >= a_value:
-                    marks += "!"
-                if i == count and len(rolls) > count:
-                    die_strs.append("|")
-                die_strs.append(f"{die}{marks}")
-
-            a_display = f"a{a_value}" if a_value != 10 else ""
-            reason_display = f" {reason}" if reason else ""
-            over = "(已达上限)" if len(rolls) >= MAX_TOTAL else ""
-            header = f"{count}d10{a_display}{reason_display}"
-            results.append(
-                f"{header} = {{{', '.join(die_strs)}}} = {successes}成功{over}"
-            )
-
-        if results:
-            yield event.plain_result("\n".join(results))
 
     @filter.command_group("lishi")
     async def lishi(self):
@@ -795,75 +687,6 @@ class util(Star):
         qq_info = await bot.api.call_action("get_group_member_info", **payloads)
         logger.info(json.dumps(qq_info, indent=2, ensure_ascii=False))
         yield event.plain_result(json.dumps(qq_info))
-
-    # 自建tts服务
-    @filter.command("t2s")
-    async def use_tts(self, event: AiocqhttpMessageEvent):
-        logger.debug(f"[utrl] event.message_str:{event.message_str}")
-        guess_text = self.extract_and_sanitize_input(event.message_str, "t2s")
-        logger.debug(f"[utrl] guess_text:{guess_text}")
-        payload = {
-            "text": guess_text,
-            "reference_id": self.tts_id["hiro"],
-            "language": "Japanese",
-        }
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    "https://tts.lishining.top/generate",
-                    json=payload,
-                    timeout=600,
-                ) as resp:
-                    resp.raise_for_status()
-                    data = await resp.json()
-        except Exception as e:
-            logger.error(f"[utrl] e:{e}")
-            logger.error(traceback.format_exc())
-            logger.error(f"[utrl] payload:{payload}")
-            data = {}
-        audio_url = data.get("audio_url", None)
-        if audio_url is None:
-            yield event.plain_result("服务器错误,请稍后再试")
-            logger.error(f"[util] 发送失败,data:{data}")
-            return
-        chain = [
-            Comp.Record.fromURL(str(audio_url)),
-        ]
-        yield event.chain_result(chain)
-
-    @filter.command("et2s")
-    async def use_etts(self, event: AiocqhttpMessageEvent):
-        logger.debug(f"[utrl] event.message_str:{event.message_str}")
-        guess_text = self.extract_and_sanitize_input(event.message_str, "t2s")
-        logger.debug(f"[utrl] guess_text:{guess_text}")
-        payload = {
-            "text": guess_text,
-            "reference_id": self.tts_id["ema"],
-            "language": "Japanese",
-        }
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    "https://tts.lishining.top/generate",
-                    json=payload,
-                    timeout=600,
-                ) as resp:
-                    resp.raise_for_status()
-                    data = await resp.json()
-        except Exception as e:
-            logger.error(f"[utrl] e:{e}")
-            logger.error(traceback.format_exc())
-            logger.error(f"[utrl] payload:{payload}")
-            data = {}
-        audio_url = data.get("audio_url", None)
-        if audio_url is None:
-            yield event.plain_result("服务器错误,请稍后再试")
-            logger.error(f"[util] 发送失败,data:{data}")
-            return
-        chain = [
-            Comp.Record.fromURL(str(audio_url)),
-        ]
-        yield event.chain_result(chain)
 
     @filter.on_llm_request(priority=-5000)
     async def apply_history_tool_config(
