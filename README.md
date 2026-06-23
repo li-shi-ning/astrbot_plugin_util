@@ -34,3 +34,5 @@ AstrBot 当前配置界面没有目录选择器，因此 `audio_directory` 使�
 ## 开发计划
 
 功能状态、依赖条件和验收标准见 [TODO.md](TODO.md)。
+
+随机群友土味情话功能的实现约定见 [LOVE_MESSAGE_DESIGN.md](LOVE_MESSAGE_DESIGN.md)。
