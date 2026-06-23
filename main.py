@@ -32,9 +32,19 @@ from astrbot.core.star.star_handler import EventType, star_handlers_registry
 try:
     from .core.Filter import register_pack_type
     from .core.keyword_voice import load_group_keyword_voices
+    from .core.love_message import (
+        choose_love_message,
+        format_love_message,
+        load_love_messages,
+    )
 except ImportError:
     from core.Filter import register_pack_type
     from core.keyword_voice import load_group_keyword_voices
+    from core.love_message import (
+        choose_love_message,
+        format_love_message,
+        load_love_messages,
+    )
 
 
 SUPPORTED_KEYWORD_VOICE_SUFFIXES = {
@@ -47,7 +57,7 @@ SUPPORTED_KEYWORD_VOICE_SUFFIXES = {
 }
 
 
-@register("util", "lishinig", "私人插件", "1.3.2")
+@register("util", "lishinig", "私人插件", "1.4.0")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -309,6 +319,9 @@ class util(Star):
             config_value(li_config, "li_platform_id", "").strip() or None
         )
         self.group_keyword_voices = load_group_keyword_voices(config)
+        self.love_messages = load_love_messages(
+            Path(__file__).resolve().parent / "core" / "love_messages.txt"
+        )
         self._li_takeover_next_turn_keys: set[str] = set()
         self._li_reply_capture_futures: dict[str, asyncio.Future[str]] = {}
 
@@ -392,6 +405,97 @@ class util(Star):
                 await bot.api.call_action("send_poke", **payloads)
         else:
             yield event.plain_result(text)
+
+    @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
+    @filter.command("土味情话")
+    async def send_random_love_message(
+        self,
+        event: AiocqhttpMessageEvent,
+        qq: str = "",
+    ):
+        """使用 /土味情话 [QQ号|@用户] 向目标发送随机情话。"""
+        if not self.love_messages:
+            logger.warning("[util] 土味情话词库为空")
+            return
+
+        target_id, _ = self._resolve_love_message_target(event, qq)
+        if not target_id:
+            yield event.plain_result("未找到有效目标喵。")
+            return
+
+        message = choose_love_message(self.love_messages)
+        if message is None:
+            logger.warning("[util] 无法从土味情话词库选择内容")
+            return
+
+        output = format_love_message(message)
+        if not output:
+            return
+
+        yield event.chain_result(
+            [
+                Comp.At(qq=target_id),
+                Comp.Plain(f" {output}"),
+            ]
+        )
+
+    def _resolve_love_message_target(
+        self,
+        event: AstrMessageEvent,
+        qq: str = "",
+    ) -> tuple[str | None, str | None]:
+        """显式QQ优先，其次@目标，最后回退到发送者。"""
+        qq_candidate = str(qq or "").strip()
+        if qq_candidate:
+            if self._validate_qq(qq_candidate):
+                return qq_candidate, None
+            logger.warning("[util] 土味情话显式QQ参数无效: %s", qq_candidate)
+
+        mention_targets = self._extract_love_message_mentions(event)
+        if mention_targets["non_bot"]:
+            return mention_targets["non_bot"][-1]
+        if mention_targets["bot"]:
+            return mention_targets["bot"][-1]
+
+        sender_id = str(event.get_sender_id() or "").strip()
+        if self._validate_qq(sender_id):
+            return sender_id, event.get_sender_name() or None
+        return None, None
+
+    def _extract_love_message_mentions(
+        self,
+        event: AstrMessageEvent,
+    ) -> dict[str, list[tuple[str, str | None]]]:
+        self_ids = self._love_message_bot_ids(event)
+        targets: dict[str, list[tuple[str, str | None]]] = {
+            "non_bot": [],
+            "bot": [],
+        }
+        for component in event.get_messages():
+            if not isinstance(component, Comp.At):
+                continue
+            mentioned_id = str(component.qq or "").strip()
+            if (
+                not mentioned_id
+                or mentioned_id.casefold() == "all"
+                or not self._validate_qq(mentioned_id)
+            ):
+                continue
+            mentioned_name = str(getattr(component, "name", "") or "").strip() or None
+            key = "bot" if mentioned_id in self_ids else "non_bot"
+            targets[key].append((mentioned_id, mentioned_name))
+        return targets
+
+    @staticmethod
+    def _love_message_bot_ids(event: AstrMessageEvent) -> set[str]:
+        self_ids: set[str] = set()
+        self_id = str(event.get_self_id() or "").strip()
+        if self_id:
+            self_ids.add(self_id)
+        raw_message = getattr(event.message_obj, "raw_message", None)
+        if isinstance(raw_message, dict) and raw_message.get("self_id"):
+            self_ids.add(str(raw_message["self_id"]))
+        return self_ids
 
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
     async def reply_group_keyword_voice(self, event: AiocqhttpMessageEvent):
