@@ -28,10 +28,15 @@ from astrbot.core.star.star import star_map
 from astrbot.core.star.star_handler import EventType, star_handlers_registry
 
 # ====== 核心库 ======
-from .core.Filter import register_pack_type
+try:
+    from .core.Filter import register_pack_type
+    from .core.keyword_reply import load_group_keyword_replies
+except ImportError:
+    from core.Filter import register_pack_type
+    from core.keyword_reply import load_group_keyword_replies
 
 
-@register("util", "lishinig", "私人插件", "1.0.0")
+@register("util", "lishinig", "私人插件", "1.2.0")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -292,6 +297,7 @@ class util(Star):
         self.li_platform_id = (
             config_value(li_config, "li_platform_id", "").strip() or None
         )
+        self.group_keyword_replies = load_group_keyword_replies(config)
         self._li_takeover_next_turn_keys: set[str] = set()
         self._li_reply_capture_futures: dict[str, asyncio.Future[str]] = {}
 
@@ -375,6 +381,25 @@ class util(Star):
                 await bot.api.call_action("send_poke", **payloads)
         else:
             yield event.plain_result(text)
+
+    @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
+    async def reply_group_keyword(self, event: AiocqhttpMessageEvent):
+        """按分群配置检测关键词并发送台词。"""
+        group_id = str(event.get_group_id() or "").strip()
+        if not group_id:
+            return
+
+        settings = self.group_keyword_replies.get(group_id)
+        if settings is None:
+            return
+
+        message = event.message_str or event.get_message_outline() or ""
+        response = settings.response_for(message)
+        if response is None:
+            return
+
+        logger.info("[util] 群 %s 命中关键词台词配置", group_id)
+        yield event.plain_result(response)
 
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
     async def replyMessage(self, event: AiocqhttpMessageEvent):

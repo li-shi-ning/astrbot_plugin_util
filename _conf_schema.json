@@ -1,4 +1,50 @@
 {
+  "group_keyword_replies": {
+    "type": "template_list",
+    "description": "分群关键词台词",
+    "hint": "只检测列表中配置的群聊，不提供全局配置。每个群可以独立开关关键词回复。",
+    "default": [],
+    "templates": {
+      "group_keyword_reply": {
+        "name": "群关键词台词",
+        "hint": "为一个群配置关键词和命中后发送的台词。",
+        "display_item": "group_id",
+        "hide_hint_in_list": true,
+        "items": {
+          "group_id": {
+            "type": "string",
+            "description": "群号",
+            "hint": "填写 QQ 群号，例如 123456789。",
+            "default": ""
+          },
+          "enabled": {
+            "type": "bool",
+            "description": "启用本群关键词回复",
+            "hint": "关闭后保留本群配置，但不再检测和回复。",
+            "default": true
+          },
+          "keywords": {
+            "type": "list",
+            "description": "触发关键词",
+            "hint": "群消息包含任一关键词时触发；英文匹配不区分大小写。",
+            "default": [],
+            "items": {
+              "type": "string"
+            }
+          },
+          "reply_lines": {
+            "type": "list",
+            "description": "输出台词",
+            "hint": "命中后按列表顺序逐行组成一条消息发送，可填写 Aizo 前四句歌词。",
+            "default": [],
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
   "history_chunking": {
     "description": "历史消息切割与读取工具",
     "type": "object",
