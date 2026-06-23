@@ -56,8 +56,11 @@ SUPPORTED_KEYWORD_VOICE_SUFFIXES = {
     ".wav",
 }
 
+PLUGIN_ROOT = Path(__file__).resolve().parent
+LOVE_MESSAGES_PATH = (PLUGIN_ROOT / "core" / "love_messages.txt").resolve()
 
-@register("util", "lishinig", "私人插件", "1.4.0")
+
+@register("util", "lishinig", "私人插件", "1.4.1")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -319,9 +322,7 @@ class util(Star):
             config_value(li_config, "li_platform_id", "").strip() or None
         )
         self.group_keyword_voices = load_group_keyword_voices(config)
-        self.love_messages = load_love_messages(
-            Path(__file__).resolve().parent / "core" / "love_messages.txt"
-        )
+        self.love_messages = load_love_messages(LOVE_MESSAGES_PATH)
         self._li_takeover_next_turn_keys: set[str] = set()
         self._li_reply_capture_futures: dict[str, asyncio.Future[str]] = {}
 

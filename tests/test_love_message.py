@@ -17,7 +17,7 @@ from core.love_message import (  # noqa: E402
     load_love_messages,
 )
 
-from main import util  # noqa: E402
+from main import LOVE_MESSAGES_PATH, PLUGIN_ROOT, util  # noqa: E402
 
 
 def make_event(
@@ -59,6 +59,18 @@ def test_loads_non_empty_lines_from_love_message_file(tmp_path):
     path.write_text("第一句。\n\n 第二句。 \n", encoding="utf-8")
 
     assert load_love_messages(path) == ("第一句。", "第二句。")
+
+
+def test_bundled_love_message_path_is_absolute_and_cwd_independent(
+    monkeypatch,
+    tmp_path,
+):
+    monkeypatch.chdir(tmp_path)
+
+    assert PLUGIN_ROOT.is_absolute()
+    assert LOVE_MESSAGES_PATH.is_absolute()
+    assert LOVE_MESSAGES_PATH == PLUGIN_ROOT / "core" / "love_messages.txt"
+    assert len(load_love_messages(LOVE_MESSAGES_PATH)) == 359
 
 
 @pytest.mark.parametrize(
