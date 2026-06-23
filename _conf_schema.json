@@ -7,7 +7,7 @@
     "templates": {
       "group_keyword_voice": {
         "name": "群关键词语音",
-        "hint": "为一个群配置关键词和命中后发送的本地语音文件。",
+        "hint": "为一个群配置关键词和存放语音文件的本地目录。",
         "display_item": "group_id",
         "hide_hint_in_list": true,
         "items": {
@@ -32,19 +32,11 @@
               "type": "string"
             }
           },
-          "audio_path": {
-            "type": "file",
-            "description": "语音文件位置",
-            "hint": "选择命中关键词后发送的本地语音文件。",
-            "default": "",
-            "file_types": [
-              "mp3",
-              "wav",
-              "amr",
-              "silk",
-              "ogg",
-              "m4a"
-            ]
+          "audio_directory": {
+            "type": "string",
+            "description": "语音目录",
+            "hint": "填写一个本地目录路径。插件按文件名排序，发送目录中的第一个 mp3、wav、amr、silk、ogg 或 m4a 文件。",
+            "default": ""
           }
         }
       }

@@ -9,16 +9,16 @@ from typing import Any
 class GroupKeywordVoice:
     enabled: bool
     keywords: tuple[str, ...]
-    audio_path: str
+    audio_directory: str
 
-    def audio_for(self, message: str) -> str | None:
-        if not self.enabled or not message or not self.audio_path:
+    def directory_for(self, message: str) -> str | None:
+        if not self.enabled or not message or not self.audio_directory:
             return None
 
         normalized_message = message.casefold()
         if not any(keyword.casefold() in normalized_message for keyword in self.keywords):
             return None
-        return self.audio_path
+        return self.audio_directory
 
 
 def load_group_keyword_voices(
@@ -40,7 +40,7 @@ def load_group_keyword_voices(
         rules[group_id] = GroupKeywordVoice(
             enabled=bool(raw_rule.get("enabled", True)),
             keywords=_clean_string_list(raw_rule.get("keywords", [])),
-            audio_path=str(raw_rule.get("audio_path", "") or "").strip(),
+            audio_directory=str(raw_rule.get("audio_directory", "") or "").strip(),
         )
     return rules
 

@@ -37,7 +37,17 @@ except ImportError:
     from core.keyword_voice import load_group_keyword_voices
 
 
-@register("util", "lishinig", "私人插件", "1.3.0")
+SUPPORTED_KEYWORD_VOICE_SUFFIXES = {
+    ".amr",
+    ".m4a",
+    ".mp3",
+    ".ogg",
+    ".silk",
+    ".wav",
+}
+
+
+@register("util", "lishinig", "私人插件", "1.3.1")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -395,21 +405,37 @@ class util(Star):
             return
 
         message = event.message_str or event.get_message_outline() or ""
-        configured_path = settings.audio_for(message)
-        if configured_path is None:
+        configured_directory = settings.directory_for(message)
+        if configured_directory is None:
             return
 
-        audio_path = Path(configured_path).expanduser()
-        if not audio_path.is_file():
+        audio_directory = Path(configured_directory).expanduser()
+        audio_path = self._first_audio_in_directory(audio_directory)
+        if audio_path is None:
             logger.warning(
-                "[util] 群 %s 命中关键词语音配置，但文件不存在: %s",
+                "[util] 群 %s 命中关键词语音配置，但目录无有效语音文件: %s",
                 group_id,
-                audio_path,
+                audio_directory,
             )
             return
 
         logger.info("[util] 群 %s 命中关键词语音配置: %s", group_id, audio_path)
         yield event.chain_result([Comp.Record.fromFileSystem(str(audio_path.resolve()))])
+
+    @staticmethod
+    def _first_audio_in_directory(audio_directory: Path) -> Path | None:
+        if not audio_directory.is_dir():
+            return None
+        candidates = sorted(
+            (
+                path
+                for path in audio_directory.iterdir()
+                if path.is_file()
+                and path.suffix.casefold() in SUPPORTED_KEYWORD_VOICE_SUFFIXES
+            ),
+            key=lambda path: path.name.casefold(),
+        )
+        return candidates[0] if candidates else None
 
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
     async def replyMessage(self, event: AiocqhttpMessageEvent):

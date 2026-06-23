@@ -47,14 +47,14 @@ def test_loads_only_explicit_group_rules_without_global_fallback():
             "global_keyword_voice": {
                 "enabled": True,
                 "keywords": ["全局"],
-                "audio_path": "global.mp3",
+                "audio_directory": "E:/global",
             },
             "group_keyword_voices": [
                 {
                     "group_id": "20002",
                     "enabled": True,
                     "keywords": ["Aizo", ""],
-                    "audio_path": " E:/voice/aizo.mp3 ",
+                    "audio_directory": " E:/voice/aizo ",
                 }
             ],
         }
@@ -62,19 +62,23 @@ def test_loads_only_explicit_group_rules_without_global_fallback():
 
     assert set(rules) == {"20002"}
     assert rules["20002"].keywords == ("Aizo",)
-    assert rules["20002"].audio_path == "E:/voice/aizo.mp3"
+    assert rules["20002"].audio_directory == "E:/voice/aizo"
 
 
 def test_duplicate_group_uses_last_configuration():
     rules = load_group_keyword_voices(
         {
             "group_keyword_voices": [
-                {"group_id": "20002", "keywords": ["旧"], "audio_path": "old.mp3"},
+                {
+                    "group_id": "20002",
+                    "keywords": ["旧"],
+                    "audio_directory": "old",
+                },
                 {
                     "group_id": "20002",
                     "enabled": False,
                     "keywords": ["新"],
-                    "audio_path": "new.mp3",
+                    "audio_directory": "new",
                 },
             ]
         }
@@ -82,52 +86,54 @@ def test_duplicate_group_uses_last_configuration():
 
     assert rules["20002"].enabled is False
     assert rules["20002"].keywords == ("新",)
-    assert rules["20002"].audio_path == "new.mp3"
+    assert rules["20002"].audio_directory == "new"
 
 
 @pytest.mark.parametrize(
     ("message", "expected"),
     [
-        ("请播放 AIZO", "aizo.mp3"),
+        ("请播放 AIZO", "E:/voice/aizo"),
         ("没有命中", None),
         ("", None),
     ],
 )
-def test_audio_for_matches_case_insensitively(message, expected):
+def test_directory_for_matches_case_insensitively(message, expected):
     settings = GroupKeywordVoice(
         enabled=True,
         keywords=("aizo",),
-        audio_path="aizo.mp3",
+        audio_directory="E:/voice/aizo",
     )
 
-    assert settings.audio_for(message) == expected
+    assert settings.directory_for(message) == expected
 
 
 def test_disabled_or_incomplete_rule_never_replies():
-    disabled = GroupKeywordVoice(False, ("aizo",), "aizo.mp3")
-    no_keywords = GroupKeywordVoice(True, (), "aizo.mp3")
-    no_audio = GroupKeywordVoice(True, ("aizo",), "")
+    disabled = GroupKeywordVoice(False, ("aizo",), "E:/voice/aizo")
+    no_keywords = GroupKeywordVoice(True, (), "E:/voice/aizo")
+    no_directory = GroupKeywordVoice(True, ("aizo",), "")
 
-    assert disabled.audio_for("aizo") is None
-    assert no_keywords.audio_for("aizo") is None
-    assert no_audio.audio_for("aizo") is None
+    assert disabled.directory_for("aizo") is None
+    assert no_keywords.directory_for("aizo") is None
+    assert no_directory.directory_for("aizo") is None
 
 
 @pytest.mark.asyncio
 async def test_handler_sends_audio_only_in_configured_enabled_group(tmp_path):
-    audio_path = tmp_path / "aizo.mp3"
+    audio_directory = tmp_path / "voice"
+    audio_directory.mkdir()
+    audio_path = audio_directory / "aizo.mp3"
     audio_path.write_bytes(b"test audio")
     plugin = make_plugin(
         {
             "20002": GroupKeywordVoice(
                 enabled=True,
                 keywords=("aizo",),
-                audio_path=str(audio_path),
+                audio_directory=str(audio_directory),
             ),
             "30003": GroupKeywordVoice(
                 enabled=False,
                 keywords=("aizo",),
-                audio_path=str(audio_path),
+                audio_directory=str(audio_directory),
             ),
         }
     )
@@ -154,13 +160,13 @@ async def test_handler_sends_audio_only_in_configured_enabled_group(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_handler_skips_missing_audio_file():
+async def test_handler_skips_missing_audio_directory():
     plugin = make_plugin(
         {
             "20002": GroupKeywordVoice(
                 enabled=True,
                 keywords=("aizo",),
-                audio_path="missing-aizo.mp3",
+                audio_directory="missing-aizo-directory",
             )
         }
     )
@@ -170,3 +176,20 @@ async def test_handler_skips_missing_audio_file():
     )
 
     assert results == []
+
+
+def test_first_audio_in_directory_uses_sorted_supported_file(tmp_path):
+    (tmp_path / "z-last.wav").write_bytes(b"wav")
+    expected = tmp_path / "A-first.MP3"
+    expected.write_bytes(b"mp3")
+    (tmp_path / "notes.txt").write_text("ignored", encoding="utf-8")
+    nested = tmp_path / "nested"
+    nested.mkdir()
+    (nested / "nested.mp3").write_bytes(b"ignored")
+
+    assert util._first_audio_in_directory(tmp_path) == expected
+
+
+def test_first_audio_in_directory_rejects_empty_or_missing_directory(tmp_path):
+    assert util._first_audio_in_directory(tmp_path) is None
+    assert util._first_audio_in_directory(tmp_path / "missing") is None
