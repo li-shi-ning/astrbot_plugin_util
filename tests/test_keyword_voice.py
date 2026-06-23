@@ -1,0 +1,172 @@
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+PLUGIN_ROOT = Path(__file__).resolve().parents[1]
+if str(PLUGIN_ROOT) not in sys.path:
+    sys.path.insert(0, str(PLUGIN_ROOT))
+
+from core.keyword_voice import (  # noqa: E402
+    GroupKeywordVoice,
+    load_group_keyword_voices,
+)
+
+from main import util  # noqa: E402
+
+
+def make_event(
+    *,
+    group_id: str | None = "20002",
+    message: str = "播放 AIZO",
+):
+    return SimpleNamespace(
+        message_str=message,
+        get_group_id=lambda: group_id,
+        get_message_outline=lambda: message,
+        chain_result=lambda chain: SimpleNamespace(chain=chain),
+    )
+
+
+async def collect_async_results(generator):
+    return [item async for item in generator]
+
+
+def make_plugin(rules: dict[str, GroupKeywordVoice]) -> util:
+    plugin = util.__new__(util)
+    plugin.group_keyword_voices = rules
+    return plugin
+
+
+def test_loads_only_explicit_group_rules_without_global_fallback():
+    rules = load_group_keyword_voices(
+        {
+            "global_keyword_voice": {
+                "enabled": True,
+                "keywords": ["全局"],
+                "audio_path": "global.mp3",
+            },
+            "group_keyword_voices": [
+                {
+                    "group_id": "20002",
+                    "enabled": True,
+                    "keywords": ["Aizo", ""],
+                    "audio_path": " E:/voice/aizo.mp3 ",
+                }
+            ],
+        }
+    )
+
+    assert set(rules) == {"20002"}
+    assert rules["20002"].keywords == ("Aizo",)
+    assert rules["20002"].audio_path == "E:/voice/aizo.mp3"
+
+
+def test_duplicate_group_uses_last_configuration():
+    rules = load_group_keyword_voices(
+        {
+            "group_keyword_voices": [
+                {"group_id": "20002", "keywords": ["旧"], "audio_path": "old.mp3"},
+                {
+                    "group_id": "20002",
+                    "enabled": False,
+                    "keywords": ["新"],
+                    "audio_path": "new.mp3",
+                },
+            ]
+        }
+    )
+
+    assert rules["20002"].enabled is False
+    assert rules["20002"].keywords == ("新",)
+    assert rules["20002"].audio_path == "new.mp3"
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("请播放 AIZO", "aizo.mp3"),
+        ("没有命中", None),
+        ("", None),
+    ],
+)
+def test_audio_for_matches_case_insensitively(message, expected):
+    settings = GroupKeywordVoice(
+        enabled=True,
+        keywords=("aizo",),
+        audio_path="aizo.mp3",
+    )
+
+    assert settings.audio_for(message) == expected
+
+
+def test_disabled_or_incomplete_rule_never_replies():
+    disabled = GroupKeywordVoice(False, ("aizo",), "aizo.mp3")
+    no_keywords = GroupKeywordVoice(True, (), "aizo.mp3")
+    no_audio = GroupKeywordVoice(True, ("aizo",), "")
+
+    assert disabled.audio_for("aizo") is None
+    assert no_keywords.audio_for("aizo") is None
+    assert no_audio.audio_for("aizo") is None
+
+
+@pytest.mark.asyncio
+async def test_handler_sends_audio_only_in_configured_enabled_group(tmp_path):
+    audio_path = tmp_path / "aizo.mp3"
+    audio_path.write_bytes(b"test audio")
+    plugin = make_plugin(
+        {
+            "20002": GroupKeywordVoice(
+                enabled=True,
+                keywords=("aizo",),
+                audio_path=str(audio_path),
+            ),
+            "30003": GroupKeywordVoice(
+                enabled=False,
+                keywords=("aizo",),
+                audio_path=str(audio_path),
+            ),
+        }
+    )
+
+    matched = await collect_async_results(
+        plugin.reply_group_keyword_voice(make_event(group_id="20002"))
+    )
+    unconfigured = await collect_async_results(
+        plugin.reply_group_keyword_voice(make_event(group_id="99999"))
+    )
+    disabled = await collect_async_results(
+        plugin.reply_group_keyword_voice(make_event(group_id="30003"))
+    )
+    private = await collect_async_results(
+        plugin.reply_group_keyword_voice(make_event(group_id=None))
+    )
+
+    assert len(matched) == 1
+    assert len(matched[0].chain) == 1
+    assert matched[0].chain[0].path == str(audio_path.resolve())
+    assert unconfigured == []
+    assert disabled == []
+    assert private == []
+
+
+@pytest.mark.asyncio
+async def test_handler_skips_missing_audio_file():
+    plugin = make_plugin(
+        {
+            "20002": GroupKeywordVoice(
+                enabled=True,
+                keywords=("aizo",),
+                audio_path="missing-aizo.mp3",
+            )
+        }
+    )
+
+    results = await collect_async_results(
+        plugin.reply_group_keyword_voice(make_event(group_id="20002"))
+    )
+
+    assert results == []

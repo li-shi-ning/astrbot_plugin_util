@@ -1,13 +1,13 @@
 {
-  "group_keyword_replies": {
+  "group_keyword_voices": {
     "type": "template_list",
-    "description": "分群关键词台词",
-    "hint": "只检测列表中配置的群聊，不提供全局配置。每个群可以独立开关关键词回复。",
+    "description": "分群关键词语音",
+    "hint": "只检测列表中配置的群聊，不提供全局配置。每个群可以独立开关关键词语音。",
     "default": [],
     "templates": {
-      "group_keyword_reply": {
-        "name": "群关键词台词",
-        "hint": "为一个群配置关键词和命中后发送的台词。",
+      "group_keyword_voice": {
+        "name": "群关键词语音",
+        "hint": "为一个群配置关键词和命中后发送的本地语音文件。",
         "display_item": "group_id",
         "hide_hint_in_list": true,
         "items": {
@@ -19,7 +19,7 @@
           },
           "enabled": {
             "type": "bool",
-            "description": "启用本群关键词回复",
+            "description": "启用本群关键词语音",
             "hint": "关闭后保留本群配置，但不再检测和回复。",
             "default": true
           },
@@ -32,14 +32,19 @@
               "type": "string"
             }
           },
-          "reply_lines": {
-            "type": "list",
-            "description": "输出台词",
-            "hint": "命中后按列表顺序逐行组成一条消息发送，可填写 Aizo 前四句歌词。",
-            "default": [],
-            "items": {
-              "type": "string"
-            }
+          "audio_path": {
+            "type": "file",
+            "description": "语音文件位置",
+            "hint": "选择命中关键词后发送的本地语音文件。",
+            "default": "",
+            "file_types": [
+              "mp3",
+              "wav",
+              "amr",
+              "silk",
+              "ogg",
+              "m4a"
+            ]
           }
         }
       }

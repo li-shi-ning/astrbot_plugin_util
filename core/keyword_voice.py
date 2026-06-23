@@ -6,29 +6,29 @@ from typing import Any
 
 
 @dataclass(frozen=True, slots=True)
-class GroupKeywordReply:
+class GroupKeywordVoice:
     enabled: bool
     keywords: tuple[str, ...]
-    reply_lines: tuple[str, ...]
+    audio_path: str
 
-    def response_for(self, message: str) -> str | None:
-        if not self.enabled or not message or not self.reply_lines:
+    def audio_for(self, message: str) -> str | None:
+        if not self.enabled or not message or not self.audio_path:
             return None
 
         normalized_message = message.casefold()
         if not any(keyword.casefold() in normalized_message for keyword in self.keywords):
             return None
-        return "\n".join(self.reply_lines)
+        return self.audio_path
 
 
-def load_group_keyword_replies(
+def load_group_keyword_voices(
     config: Mapping[str, Any],
-) -> dict[str, GroupKeywordReply]:
-    raw_rules = config.get("group_keyword_replies", [])
+) -> dict[str, GroupKeywordVoice]:
+    raw_rules = config.get("group_keyword_voices", [])
     if not isinstance(raw_rules, list):
         return {}
 
-    rules: dict[str, GroupKeywordReply] = {}
+    rules: dict[str, GroupKeywordVoice] = {}
     for raw_rule in raw_rules:
         if not isinstance(raw_rule, Mapping):
             continue
@@ -37,10 +37,10 @@ def load_group_keyword_replies(
         if not group_id:
             continue
 
-        rules[group_id] = GroupKeywordReply(
+        rules[group_id] = GroupKeywordVoice(
             enabled=bool(raw_rule.get("enabled", True)),
             keywords=_clean_string_list(raw_rule.get("keywords", [])),
-            reply_lines=_clean_string_list(raw_rule.get("reply_lines", [])),
+            audio_path=str(raw_rule.get("audio_path", "") or "").strip(),
         )
     return rules
 

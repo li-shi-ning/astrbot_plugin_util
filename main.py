@@ -6,6 +6,7 @@ import re
 import traceback
 import uuid
 from collections.abc import Mapping
+from pathlib import Path
 
 # ====== 第三方库 ======
 import numpy as np
@@ -30,13 +31,13 @@ from astrbot.core.star.star_handler import EventType, star_handlers_registry
 # ====== 核心库 ======
 try:
     from .core.Filter import register_pack_type
-    from .core.keyword_reply import load_group_keyword_replies
+    from .core.keyword_voice import load_group_keyword_voices
 except ImportError:
     from core.Filter import register_pack_type
-    from core.keyword_reply import load_group_keyword_replies
+    from core.keyword_voice import load_group_keyword_voices
 
 
-@register("util", "lishinig", "私人插件", "1.2.0")
+@register("util", "lishinig", "私人插件", "1.3.0")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -297,7 +298,7 @@ class util(Star):
         self.li_platform_id = (
             config_value(li_config, "li_platform_id", "").strip() or None
         )
-        self.group_keyword_replies = load_group_keyword_replies(config)
+        self.group_keyword_voices = load_group_keyword_voices(config)
         self._li_takeover_next_turn_keys: set[str] = set()
         self._li_reply_capture_futures: dict[str, asyncio.Future[str]] = {}
 
@@ -383,23 +384,32 @@ class util(Star):
             yield event.plain_result(text)
 
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
-    async def reply_group_keyword(self, event: AiocqhttpMessageEvent):
-        """按分群配置检测关键词并发送台词。"""
+    async def reply_group_keyword_voice(self, event: AiocqhttpMessageEvent):
+        """按分群配置检测关键词并发送语音。"""
         group_id = str(event.get_group_id() or "").strip()
         if not group_id:
             return
 
-        settings = self.group_keyword_replies.get(group_id)
+        settings = self.group_keyword_voices.get(group_id)
         if settings is None:
             return
 
         message = event.message_str or event.get_message_outline() or ""
-        response = settings.response_for(message)
-        if response is None:
+        configured_path = settings.audio_for(message)
+        if configured_path is None:
             return
 
-        logger.info("[util] 群 %s 命中关键词台词配置", group_id)
-        yield event.plain_result(response)
+        audio_path = Path(configured_path).expanduser()
+        if not audio_path.is_file():
+            logger.warning(
+                "[util] 群 %s 命中关键词语音配置，但文件不存在: %s",
+                group_id,
+                audio_path,
+            )
+            return
+
+        logger.info("[util] 群 %s 命中关键词语音配置: %s", group_id, audio_path)
+        yield event.chain_result([Comp.Record.fromFileSystem(str(audio_path.resolve()))])
 
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
     async def replyMessage(self, event: AiocqhttpMessageEvent):
