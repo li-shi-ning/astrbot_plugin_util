@@ -23,9 +23,4 @@ def choose_love_message(
 
 
 def format_love_message(message: str) -> str:
-    text = message.strip()
-    if not text:
-        return ""
-    if text.endswith(("喵", "喵~", "喵。", "喵！", "喵？")):
-        return text
-    return f"{text}喵"
+    return message.strip()

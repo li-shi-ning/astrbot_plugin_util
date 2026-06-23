@@ -76,8 +76,9 @@ def test_bundled_love_message_path_is_absolute_and_cwd_independent(
 @pytest.mark.parametrize(
     ("message", "expected"),
     [
-        ("不要抱怨，抱我。", "不要抱怨，抱我。喵"),
+        ("不要抱怨，抱我。", "不要抱怨，抱我。"),
         ("已经有喵", "已经有喵"),
+        ("  赤手空拳泡MM就和白手起家一样，彰显男人魅力。  ", "赤手空拳泡MM就和白手起家一样，彰显男人魅力。"),
         ("", ""),
     ],
 )
@@ -99,7 +100,7 @@ async def test_command_uses_explicit_qq(monkeypatch):
 
     assert len(results) == 1
     assert str(results[0].chain[0].qq) == "10002"
-    assert results[0].chain[1].text == " 不要抱怨，抱我。喵"
+    assert results[0].chain[1].text == " 不要抱怨，抱我。"
 
 
 @pytest.mark.asyncio

@@ -60,7 +60,7 @@ PLUGIN_ROOT = Path(__file__).resolve().parent
 LOVE_MESSAGES_PATH = (PLUGIN_ROOT / "core" / "love_messages.txt").resolve()
 
 
-@register("util", "lishinig", "私人插件", "1.4.1")
+@register("util", "lishinig", "私人插件", "1.4.2")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
