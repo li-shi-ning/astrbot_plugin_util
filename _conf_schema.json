@@ -2,7 +2,7 @@
   "group_keyword_voices": {
     "type": "template_list",
     "description": "分群关键词语音",
-    "hint": "只检测列表中配置的群聊，不提供全局配置。每个群可以独立开关关键词语音。",
+    "hint": "只检测列表中配置的群聊，不提供全局配置。同一群号可以添加多条规则，分别配置关键词和语音目录。",
     "default": [],
     "templates": {
       "group_keyword_voice": {

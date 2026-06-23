@@ -35,7 +35,7 @@ async def collect_async_results(generator):
     return [item async for item in generator]
 
 
-def make_plugin(rules: dict[str, GroupKeywordVoice]) -> util:
+def make_plugin(rules: dict[str, tuple[GroupKeywordVoice, ...]]) -> util:
     plugin = util.__new__(util)
     plugin.group_keyword_voices = rules
     return plugin
@@ -61,11 +61,11 @@ def test_loads_only_explicit_group_rules_without_global_fallback():
     )
 
     assert set(rules) == {"20002"}
-    assert rules["20002"].keywords == ("Aizo",)
-    assert rules["20002"].audio_directory == "E:/voice/aizo"
+    assert rules["20002"][0].keywords == ("Aizo",)
+    assert rules["20002"][0].audio_directory == "E:/voice/aizo"
 
 
-def test_duplicate_group_uses_last_configuration():
+def test_duplicate_group_keeps_all_configurations_in_order():
     rules = load_group_keyword_voices(
         {
             "group_keyword_voices": [
@@ -84,9 +84,12 @@ def test_duplicate_group_uses_last_configuration():
         }
     )
 
-    assert rules["20002"].enabled is False
-    assert rules["20002"].keywords == ("新",)
-    assert rules["20002"].audio_directory == "new"
+    assert len(rules["20002"]) == 2
+    assert rules["20002"][0].keywords == ("旧",)
+    assert rules["20002"][0].audio_directory == "old"
+    assert rules["20002"][1].enabled is False
+    assert rules["20002"][1].keywords == ("新",)
+    assert rules["20002"][1].audio_directory == "new"
 
 
 @pytest.mark.parametrize(
@@ -125,15 +128,19 @@ async def test_handler_sends_audio_only_in_configured_enabled_group(tmp_path):
     audio_path.write_bytes(b"test audio")
     plugin = make_plugin(
         {
-            "20002": GroupKeywordVoice(
-                enabled=True,
-                keywords=("aizo",),
-                audio_directory=str(audio_directory),
+            "20002": (
+                GroupKeywordVoice(
+                    enabled=True,
+                    keywords=("aizo",),
+                    audio_directory=str(audio_directory),
+                ),
             ),
-            "30003": GroupKeywordVoice(
-                enabled=False,
-                keywords=("aizo",),
-                audio_directory=str(audio_directory),
+            "30003": (
+                GroupKeywordVoice(
+                    enabled=False,
+                    keywords=("aizo",),
+                    audio_directory=str(audio_directory),
+                ),
             ),
         }
     )
@@ -163,10 +170,12 @@ async def test_handler_sends_audio_only_in_configured_enabled_group(tmp_path):
 async def test_handler_skips_missing_audio_directory():
     plugin = make_plugin(
         {
-            "20002": GroupKeywordVoice(
-                enabled=True,
-                keywords=("aizo",),
-                audio_directory="missing-aizo-directory",
+            "20002": (
+                GroupKeywordVoice(
+                    enabled=True,
+                    keywords=("aizo",),
+                    audio_directory="missing-aizo-directory",
+                ),
             )
         }
     )
@@ -176,6 +185,64 @@ async def test_handler_skips_missing_audio_directory():
     )
 
     assert results == []
+
+
+@pytest.mark.asyncio
+async def test_same_group_can_use_different_keywords_and_directories(tmp_path):
+    first_directory = tmp_path / "first"
+    second_directory = tmp_path / "second"
+    first_directory.mkdir()
+    second_directory.mkdir()
+    first_audio = first_directory / "first.mp3"
+    second_audio = second_directory / "second.mp3"
+    first_audio.write_bytes(b"first")
+    second_audio.write_bytes(b"second")
+    plugin = make_plugin(
+        {
+            "20002": (
+                GroupKeywordVoice(True, ("第一个",), str(first_directory)),
+                GroupKeywordVoice(True, ("第二个",), str(second_directory)),
+            )
+        }
+    )
+
+    results = await collect_async_results(
+        plugin.reply_group_keyword_voice(
+            make_event(group_id="20002", message="播放第二个")
+        )
+    )
+
+    assert len(results) == 1
+    assert results[0].chain[0].path == str(second_audio.resolve())
+
+
+@pytest.mark.asyncio
+async def test_same_group_sends_only_first_valid_matching_rule(tmp_path):
+    first_directory = tmp_path / "first"
+    second_directory = tmp_path / "second"
+    first_directory.mkdir()
+    second_directory.mkdir()
+    first_audio = first_directory / "first.mp3"
+    second_audio = second_directory / "second.mp3"
+    first_audio.write_bytes(b"first")
+    second_audio.write_bytes(b"second")
+    plugin = make_plugin(
+        {
+            "20002": (
+                GroupKeywordVoice(True, ("共同",), str(first_directory)),
+                GroupKeywordVoice(True, ("共同",), str(second_directory)),
+            )
+        }
+    )
+
+    results = await collect_async_results(
+        plugin.reply_group_keyword_voice(
+            make_event(group_id="20002", message="共同关键词")
+        )
+    )
+
+    assert len(results) == 1
+    assert results[0].chain[0].path == str(first_audio.resolve())
 
 
 def test_first_audio_in_directory_uses_sorted_supported_file(tmp_path):

@@ -23,12 +23,12 @@ class GroupKeywordVoice:
 
 def load_group_keyword_voices(
     config: Mapping[str, Any],
-) -> dict[str, GroupKeywordVoice]:
+) -> dict[str, tuple[GroupKeywordVoice, ...]]:
     raw_rules = config.get("group_keyword_voices", [])
     if not isinstance(raw_rules, list):
         return {}
 
-    rules: dict[str, GroupKeywordVoice] = {}
+    rules: dict[str, list[GroupKeywordVoice]] = {}
     for raw_rule in raw_rules:
         if not isinstance(raw_rule, Mapping):
             continue
@@ -37,12 +37,19 @@ def load_group_keyword_voices(
         if not group_id:
             continue
 
-        rules[group_id] = GroupKeywordVoice(
-            enabled=bool(raw_rule.get("enabled", True)),
-            keywords=_clean_string_list(raw_rule.get("keywords", [])),
-            audio_directory=str(raw_rule.get("audio_directory", "") or "").strip(),
+        rules.setdefault(group_id, []).append(
+            GroupKeywordVoice(
+                enabled=bool(raw_rule.get("enabled", True)),
+                keywords=_clean_string_list(raw_rule.get("keywords", [])),
+                audio_directory=str(
+                    raw_rule.get("audio_directory", "") or ""
+                ).strip(),
+            )
         )
-    return rules
+    return {
+        group_id: tuple(group_rules)
+        for group_id, group_rules in rules.items()
+    }
 
 
 def _clean_string_list(value: Any) -> tuple[str, ...]:

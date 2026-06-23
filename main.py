@@ -47,7 +47,7 @@ SUPPORTED_KEYWORD_VOICE_SUFFIXES = {
 }
 
 
-@register("util", "lishinig", "私人插件", "1.3.1")
+@register("util", "lishinig", "私人插件", "1.3.2")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -400,27 +400,35 @@ class util(Star):
         if not group_id:
             return
 
-        settings = self.group_keyword_voices.get(group_id)
-        if settings is None:
+        group_rules = self.group_keyword_voices.get(group_id, ())
+        if not group_rules:
             return
 
         message = event.message_str or event.get_message_outline() or ""
-        configured_directory = settings.directory_for(message)
-        if configured_directory is None:
-            return
+        for settings in group_rules:
+            configured_directory = settings.directory_for(message)
+            if configured_directory is None:
+                continue
 
-        audio_directory = Path(configured_directory).expanduser()
-        audio_path = self._first_audio_in_directory(audio_directory)
-        if audio_path is None:
-            logger.warning(
-                "[util] 群 %s 命中关键词语音配置，但目录无有效语音文件: %s",
+            audio_directory = Path(configured_directory).expanduser()
+            audio_path = self._first_audio_in_directory(audio_directory)
+            if audio_path is None:
+                logger.warning(
+                    "[util] 群 %s 命中关键词语音配置，但目录无有效语音文件: %s",
+                    group_id,
+                    audio_directory,
+                )
+                continue
+
+            logger.info(
+                "[util] 群 %s 命中关键词语音配置: %s",
                 group_id,
-                audio_directory,
+                audio_path,
+            )
+            yield event.chain_result(
+                [Comp.Record.fromFileSystem(str(audio_path.resolve()))]
             )
             return
-
-        logger.info("[util] 群 %s 命中关键词语音配置: %s", group_id, audio_path)
-        yield event.chain_result([Comp.Record.fromFileSystem(str(audio_path.resolve()))])
 
     @staticmethod
     def _first_audio_in_directory(audio_directory: Path) -> Path | None:
