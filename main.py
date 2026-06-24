@@ -6,6 +6,7 @@ import re
 import traceback
 import uuid
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -68,7 +69,9 @@ try:
         build_music_config,
         format_search_results,
         format_song_detail,
+        load_persisted_music_cookie,
         pending_selection_is_expired,
+        save_persisted_music_cookie,
         save_qr_image,
     )
 except ImportError:
@@ -109,7 +112,9 @@ except ImportError:
         build_music_config,
         format_search_results,
         format_song_detail,
+        load_persisted_music_cookie,
         pending_selection_is_expired,
+        save_persisted_music_cookie,
         save_qr_image,
     )
 
@@ -125,9 +130,11 @@ SUPPORTED_KEYWORD_VOICE_SUFFIXES = {
 
 PLUGIN_ROOT = Path(__file__).resolve().parent
 LOVE_MESSAGES_PATH = (PLUGIN_ROOT / "core" / "love_messages.txt").resolve()
+NETEASE_LOGIN_DATA_DIR = (PLUGIN_ROOT / "data" / "netease_login").resolve()
+NETEASE_COOKIE_PATH = (NETEASE_LOGIN_DATA_DIR / "cookie.json").resolve()
 
 
-@register("util", "lishinig", "私人插件", "1.6.4")
+@register("util", "lishinig", "私人插件", "1.6.5")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -396,6 +403,12 @@ class util(Star):
             True,
         )
         self.music_search_config = build_music_config(music_search_config)
+        persisted_music_cookie = load_persisted_music_cookie(NETEASE_COOKIE_PATH)
+        if persisted_music_cookie:
+            self.music_search_config = replace(
+                self.music_search_config,
+                cookie=persisted_music_cookie,
+            )
         self.music_pending_selections: dict[str, PendingMusicSelection] = {}
         self.music_song_cache: dict[str, list[dict]] = {}
         self.group_keyword_voices = load_group_keyword_voices(config)
@@ -584,7 +597,7 @@ class util(Star):
             login = await api.create_qr_login()
             qr_path = save_qr_image(
                 login.qr_image,
-                PLUGIN_ROOT / "data" / "netease_login",
+                NETEASE_LOGIN_DATA_DIR,
                 login.key,
             )
         except Exception as exc:
@@ -592,14 +605,8 @@ class util(Star):
             await event.send(MessageChain([Comp.Plain(MUSIC_LOGIN_API_ERROR_MESSAGE)]))
             return
 
-        await event.send(
-            MessageChain(
-                [
-                    Comp.Plain(MUSIC_LOGIN_QR_MESSAGE),
-                    Comp.Image.fromFileSystem(str(qr_path)),
-                ]
-            )
-        )
+        await event.send(MessageChain([Comp.Image.fromFileSystem(str(qr_path))]))
+        await event.send(MessageChain([Comp.Plain(MUSIC_LOGIN_QR_MESSAGE)]))
 
         deadline = asyncio.get_running_loop().time() + 120
         while asyncio.get_running_loop().time() < deadline:
@@ -746,13 +753,8 @@ class util(Star):
         return NeteaseMusicAPI(self.music_search_config.api_base_url)
 
     def _save_music_cookie(self, cookie: str) -> None:
-        music_section = self.config.get("music_search")
-        if not isinstance(music_section, dict):
-            music_section = {}
-            self.config["music_search"] = music_section
-        music_section["cookie"] = cookie
-        self.config.save_config()
-        self.music_search_config = build_music_config(music_section)
+        save_persisted_music_cookie(cookie, NETEASE_COOKIE_PATH)
+        self.music_search_config = replace(self.music_search_config, cookie=cookie)
 
     def _remove_music_selection(self, session_id: str, cache_key: str) -> None:
         self.music_pending_selections.pop(session_id, None)

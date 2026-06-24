@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -154,6 +155,33 @@ def save_qr_image(qr_image: str, directory: Path, key: str) -> Path:
     path = directory / f"netease-login-{key}.png"
     path.write_bytes(image_bytes)
     return path
+
+
+def load_persisted_music_cookie(path: Path) -> str:
+    if not path.is_file():
+        return ""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+    if not isinstance(data, dict):
+        return ""
+    return str(data.get("cookie") or "").strip()
+
+
+def save_persisted_music_cookie(cookie: str, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "cookie": cookie,
+                "saved_at": int(time.time()),
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
 
 
 class NeteaseMusicAPI:

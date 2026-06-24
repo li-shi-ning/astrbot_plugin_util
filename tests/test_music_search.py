@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -25,6 +26,7 @@ from core.music_search import (  # noqa: E402
     build_music_config,
     format_duration,
     format_search_results,
+    load_persisted_music_cookie,
     normalize_api_base_url,
 )
 
@@ -275,11 +277,13 @@ async def test_select_music_command_rejects_invalid_number():
 
 
 @pytest.mark.asyncio
-async def test_login_netease_music_command_saves_cookie(monkeypatch, tmp_path):
+async def test_login_netease_music_command_persists_cookie(monkeypatch, tmp_path):
     async def fast_sleep(_seconds):
         return None
 
-    monkeypatch.setattr("main.PLUGIN_ROOT", tmp_path)
+    cookie_path = tmp_path / "netease_login" / "cookie.json"
+    monkeypatch.setattr("main.NETEASE_LOGIN_DATA_DIR", tmp_path / "netease_login")
+    monkeypatch.setattr("main.NETEASE_COOKIE_PATH", cookie_path)
     monkeypatch.setattr("main.asyncio.sleep", fast_sleep)
     raw_config = FakeConfig({"music_search": {"api_base_url": "64.90.12.120:3051"}})
     api = FakeMusicApi(
@@ -299,9 +303,13 @@ async def test_login_netease_music_command_saves_cookie(monkeypatch, tmp_path):
     assert event.stopped["value"] is True
     assert api.create_qr_login_calls == 1
     assert api.check_qr_login_calls == ["test-key"]
-    assert raw_config["music_search"]["cookie"] == "MUSIC_U=test-cookie;"
-    assert raw_config.saved is True
+    assert "cookie" not in raw_config["music_search"]
+    assert raw_config.saved is False
+    assert json.loads(cookie_path.read_text(encoding="utf-8"))["cookie"] == "MUSIC_U=test-cookie;"
+    assert load_persisted_music_cookie(cookie_path) == "MUSIC_U=test-cookie;"
     assert plugin.music_search_config.cookie == "MUSIC_U=test-cookie;"
+    assert isinstance(event.sent[0].chain[0], Comp.Image)
+    assert len(event.sent[0].chain) == 1
     assert MUSIC_LOGIN_SUCCESS_MESSAGE in event.sent[-1].chain[0].text
 
 
@@ -310,7 +318,9 @@ async def test_login_netease_music_command_reports_expired(monkeypatch, tmp_path
     async def fast_sleep(_seconds):
         return None
 
-    monkeypatch.setattr("main.PLUGIN_ROOT", tmp_path)
+    cookie_path = tmp_path / "netease_login" / "cookie.json"
+    monkeypatch.setattr("main.NETEASE_LOGIN_DATA_DIR", tmp_path / "netease_login")
+    monkeypatch.setattr("main.NETEASE_COOKIE_PATH", cookie_path)
     monkeypatch.setattr("main.asyncio.sleep", fast_sleep)
     raw_config = FakeConfig({"music_search": {}})
     api = FakeMusicApi(
@@ -323,4 +333,6 @@ async def test_login_netease_music_command_reports_expired(monkeypatch, tmp_path
 
     assert "cookie" not in raw_config["music_search"]
     assert raw_config.saved is False
+    assert not cookie_path.exists()
+    assert isinstance(event.sent[0].chain[0], Comp.Image)
     assert MUSIC_LOGIN_EXPIRED_MESSAGE in event.sent[-1].chain[0].text
