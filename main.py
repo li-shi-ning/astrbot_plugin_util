@@ -6,10 +6,10 @@ import re
 import traceback
 import uuid
 from collections.abc import Mapping
-from datetime import date
 from pathlib import Path
 
 # ====== 第三方库 ======
+import aiohttp
 import numpy as np
 
 import astrbot.api.message_components as Comp
@@ -32,13 +32,6 @@ from astrbot.core.star.star_handler import EventType, star_handlers_registry
 # ====== 核心库 ======
 try:
     from .core.Filter import register_pack_type
-    from .core.group_history import (
-        GroupHistoryProfile,
-        build_daily_group_history_entries,
-        filter_group_history_candidates,
-        normalize_group_history_members,
-        select_daily_group_history_profile,
-    )
     from .core.keyword_voice import load_group_keyword_voices
     from .core.love_message import (
         choose_love_message,
@@ -47,13 +40,6 @@ try:
     )
 except ImportError:
     from core.Filter import register_pack_type
-    from core.group_history import (
-        GroupHistoryProfile,
-        build_daily_group_history_entries,
-        filter_group_history_candidates,
-        normalize_group_history_members,
-        select_daily_group_history_profile,
-    )
     from core.keyword_voice import load_group_keyword_voices
     from core.love_message import (
         choose_love_message,
@@ -75,7 +61,7 @@ PLUGIN_ROOT = Path(__file__).resolve().parent
 LOVE_MESSAGES_PATH = (PLUGIN_ROOT / "core" / "love_messages.txt").resolve()
 
 
-@register("util", "lishinig", "私人插件", "1.5.0")
+@register("util", "lishinig", "私人插件", "1.5.1")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -513,80 +499,163 @@ class util(Star):
             self_ids.add(str(raw_message["self_id"]))
         return self_ids
 
-    @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
-    @filter.command("群友史")
-    async def send_daily_group_history(self, event: AiocqhttpMessageEvent):
-        """每天随机抽取一名群友并生成群友史。"""
-        group_id = str(event.get_group_id() or "").strip()
-        if not group_id:
-            yield event.plain_result("群友史只能在群聊里生成。")
-            return
+    async def get_qq_nickname(self, qq_number: str) -> str:
+        """Fetch a QQ nickname for fake forward nodes."""
+        url = f"https://uapis.cn/api/v1/social/qq/userinfo?qq={qq_number}"
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                if response.status == 200:
+                    try:
+                        data = await response.json()
+                        logger.debug("[util] QQ昵称API返回: %s", data)
+                        nickname = data.get("nickname")
+                        if nickname:
+                            return str(nickname)
+                    except Exception as exc:
+                        logger.debug("[util] 解析昵称出错: %s", exc)
+        return f"用户{qq_number}"
 
-        members = await self._fetch_group_history_members(event, group_id)
-        profiles = normalize_group_history_members(members)
-        profiles = filter_group_history_candidates(
-            profiles,
-            self._group_history_excluded_user_ids(event),
-        )
-        if not profiles:
-            fallback = self._group_history_sender_profile(event)
-            if fallback is None:
-                yield event.plain_result("没有找到可以写进群友史的对象。")
-                return
-            profiles = (fallback,)
+    async def parse_message_components(self, message_obj):
+        """Parse fake-message components and attach images to their segment."""
+        segments = []
+        current_segment = {"text": "", "images": []}
+        segment_started = False
 
-        today = date.today()
-        profile = select_daily_group_history_profile(profiles, group_id, today)
-        if profile is None:
-            yield event.plain_result("没有找到可以写进群友史的对象。")
-            return
-
-        entries = build_daily_group_history_entries(profile, group_id, today)
-        nodes = [
-            Comp.Node(
-                name=profile.nickname,
-                uin=profile.user_id,
-                content=[Comp.Plain(entry)],
-            )
-            for entry in entries
-        ]
-        yield event.chain_result([Comp.Nodes(nodes=nodes)])
-
-    async def _fetch_group_history_members(
-        self,
-        event: AiocqhttpMessageEvent,
-        group_id: str,
-    ) -> list[dict]:
-        bot = getattr(event, "bot", None)
-        api = getattr(bot, "api", None)
-        if api is None or not hasattr(api, "call_action"):
-            return []
-
-        payload_group_id = int(group_id) if group_id.isdigit() else group_id
         try:
-            members = await api.call_action(
-                "get_group_member_list",
-                group_id=payload_group_id,
-                no_cache=True,
-            )
+            prefix_skipped = False
+
+            if hasattr(message_obj, "message"):
+                for comp in message_obj.message:
+                    if isinstance(comp, Comp.Plain):
+                        text = comp.text
+
+                        if not prefix_skipped and "伪造消息" in text:
+                            prefix_pos = text.find("伪造消息")
+                            text = text[prefix_pos + len("伪造消息") :].lstrip()
+                            prefix_skipped = True
+
+                        if "|" in text:
+                            parts = text.split("|")
+
+                            current_segment["text"] += parts[0]
+                            segment_started = True
+
+                            if current_segment["text"].strip():
+                                segments.append(current_segment)
+
+                            for index in range(1, len(parts) - 1):
+                                segments.append({"text": parts[index], "images": []})
+
+                            if len(parts) > 1:
+                                current_segment = {
+                                    "text": parts[-1],
+                                    "images": [],
+                                }
+                                segment_started = True
+                        else:
+                            current_segment["text"] += text
+                            segment_started = True
+
+                    elif (
+                        isinstance(comp, Comp.Image)
+                        and hasattr(comp, "url")
+                        and comp.url
+                    ):
+                        if segment_started:
+                            current_segment["images"].append(comp.url)
+                            logger.debug(
+                                "[util] 将图片 %s 添加到当前段落",
+                                comp.url,
+                            )
+
+                if current_segment["text"].strip():
+                    segments.append(current_segment)
+
+            logger.debug("[util] 伪造消息解析完成，共有 %s 个段落", len(segments))
         except Exception as exc:
-            logger.warning("[util] 获取群成员列表失败: %s", exc)
-            return []
+            logger.error("[util] 解析伪造消息组件出错: %s", exc)
+            segments = []
 
-        return members if isinstance(members, list) else []
+        return segments
 
-    def _group_history_excluded_user_ids(self, event: AstrMessageEvent) -> set[str]:
-        return self._love_message_bot_ids(event)
+    @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
+    @filter.event_message_type(filter.EventMessageType.ALL)
+    async def on_fake_message_request(self, event: AiocqhttpMessageEvent):
+        """监听所有消息并检测伪造消息请求。"""
+        message_text = event.message_str
+        if not message_text.startswith("伪造消息"):
+            return
 
-    def _group_history_sender_profile(
-        self,
-        event: AstrMessageEvent,
-    ) -> GroupHistoryProfile | None:
-        sender_id = str(event.get_sender_id() or "").strip()
-        if not self._validate_qq(sender_id):
-            return None
-        sender_name = str(event.get_sender_name() or "").strip() or f"群友{sender_id}"
-        return GroupHistoryProfile(user_id=sender_id, nickname=sender_name)
+        segments = await self.parse_message_components(event.message_obj)
+        if not segments:
+            pattern = r"伪造消息((?:\s+\d+\s+[^|]+\|)+)"
+            match = re.search(pattern, message_text)
+            if not match:
+                yield event.plain_result(
+                    "格式错误，请使用：伪造消息 QQ号 内容 | QQ号 内容 | ..."
+                )
+                return
+
+            content = match.group(1).strip()
+            text_segments = content.split("|")
+            segments = [
+                {"text": segment.strip(), "images": []}
+                for segment in text_segments
+                if segment.strip()
+            ]
+
+        nodes_list = []
+        for segment in segments:
+            text = segment["text"]
+            images = segment["images"]
+
+            match = re.match(r"^\s*(\d+)\s+(.*)", text)
+            if not match:
+                logger.debug("[util] 伪造消息段落格式错误，跳过: %s", text)
+                continue
+
+            qq_number, content = match.group(1), match.group(2).strip()
+            nickname = await self.get_qq_nickname(qq_number)
+            node_content = [Comp.Plain(content)]
+
+            for img_url in images:
+                try:
+                    node_content.append(Comp.Image.fromURL(img_url))
+                    logger.debug("[util] 为QQ %s 添加图片: %s", qq_number, img_url)
+                except Exception as exc:
+                    logger.debug("[util] 添加图片到伪造消息节点失败: %s", exc)
+
+            node = Comp.Node(
+                uin=int(qq_number),
+                name=nickname,
+                content=node_content,
+            )
+            nodes_list.append(node)
+
+        if nodes_list:
+            yield event.chain_result([Comp.Nodes(nodes=nodes_list)])
+        else:
+            yield event.plain_result("未能解析出任何有效的消息节点")
+
+    @filter.command("伪造帮助")
+    async def fake_message_help_command(self, event: AstrMessageEvent):
+        """显示伪造转发消息使用说明。"""
+        help_text = """📱 伪造转发消息插件使用说明 📱
+
+【基本格式】
+伪造消息 QQ号 消息内容 | QQ号 消息内容 | ...
+
+【带图片的格式】
+- 在任意消息段中添加图片，图片将只出现在它所在的消息段
+- 例如: 伪造消息 123456 看我的照片[图片] | 654321 好漂亮啊
+- 在这个例子中，图片只会出现在第一个人的消息中
+
+【注意事项】
+- 每个消息段之间用"|"分隔
+- 每个消息段的格式必须是"QQ号 消息内容"
+- 图片会根据它在消息中的位置分配到对应的消息段
+"""
+        yield event.plain_result(help_text)
 
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
     async def reply_group_keyword_voice(self, event: AiocqhttpMessageEvent):
