@@ -205,13 +205,13 @@ async def test_select_music_command_sends_detail_cover_and_record():
     assert event.stopped["value"] is True
     assert api.detail_calls == [10001]
     assert api.audio_calls == [(10001, "exhigh", "")]
-    assert isinstance(results[0].chain[0], Comp.Plain)
-    assert "歌名：Lemon" in results[0].chain[0].text
-    assert isinstance(results[0].chain[1], Comp.Image)
-    assert results[0].chain[1].file == "https://music.example/cover.jpg"
-    assert len(results) == 1
-    assert isinstance(event.sent[0].chain[0], Comp.Record)
-    assert event.sent[0].chain[0].file == "https://music.example/song.mp3"
+    assert results == []
+    assert isinstance(event.sent[0].chain[0], Comp.Plain)
+    assert "歌名：Lemon" in event.sent[0].chain[0].text
+    assert isinstance(event.sent[0].chain[1], Comp.Image)
+    assert event.sent[0].chain[1].file == "https://music.example/cover.jpg"
+    assert isinstance(event.sent[1].chain[0], Comp.Record)
+    assert event.sent[1].chain[0].file == "https://music.example/song.mp3"
     assert plugin.music_pending_selections == {}
     assert plugin.music_song_cache == {}
 

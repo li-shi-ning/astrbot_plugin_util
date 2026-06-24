@@ -113,7 +113,7 @@ PLUGIN_ROOT = Path(__file__).resolve().parent
 LOVE_MESSAGES_PATH = (PLUGIN_ROOT / "core" / "love_messages.txt").resolve()
 
 
-@register("util", "lishinig", "私人插件", "1.6.2")
+@register("util", "lishinig", "私人插件", "1.6.3")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -658,7 +658,8 @@ class util(Star):
         components: list[Any] = [Comp.Plain(detail_text)]
         if cover_url:
             components.append(Comp.Image.fromURL(cover_url))
-        yield event.chain_result(components)
+        logger.info("[util] 准备发送点歌信息: song_id=%s, cover=%s", song_id, bool(cover_url))
+        await event.send(MessageChain(components))
         await self._send_music_record(event, audio_url)
 
     async def _send_music_record(self, event: AstrMessageEvent, audio_url: str) -> None:
