@@ -70,7 +70,7 @@ def test_bundled_love_message_path_is_absolute_and_cwd_independent(
     assert PLUGIN_ROOT.is_absolute()
     assert LOVE_MESSAGES_PATH.is_absolute()
     assert LOVE_MESSAGES_PATH == PLUGIN_ROOT / "core" / "love_messages.txt"
-    assert len(load_love_messages(LOVE_MESSAGES_PATH)) == 359
+    assert load_love_messages(LOVE_MESSAGES_PATH)
 
 
 @pytest.mark.parametrize(

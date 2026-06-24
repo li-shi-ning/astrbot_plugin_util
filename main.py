@@ -6,6 +6,7 @@ import re
 import traceback
 import uuid
 from collections.abc import Mapping
+from datetime import date
 from pathlib import Path
 
 # ====== 第三方库 ======
@@ -31,6 +32,13 @@ from astrbot.core.star.star_handler import EventType, star_handlers_registry
 # ====== 核心库 ======
 try:
     from .core.Filter import register_pack_type
+    from .core.group_history import (
+        GroupHistoryProfile,
+        build_daily_group_history_entries,
+        filter_group_history_candidates,
+        normalize_group_history_members,
+        select_daily_group_history_profile,
+    )
     from .core.keyword_voice import load_group_keyword_voices
     from .core.love_message import (
         choose_love_message,
@@ -39,6 +47,13 @@ try:
     )
 except ImportError:
     from core.Filter import register_pack_type
+    from core.group_history import (
+        GroupHistoryProfile,
+        build_daily_group_history_entries,
+        filter_group_history_candidates,
+        normalize_group_history_members,
+        select_daily_group_history_profile,
+    )
     from core.keyword_voice import load_group_keyword_voices
     from core.love_message import (
         choose_love_message,
@@ -60,7 +75,7 @@ PLUGIN_ROOT = Path(__file__).resolve().parent
 LOVE_MESSAGES_PATH = (PLUGIN_ROOT / "core" / "love_messages.txt").resolve()
 
 
-@register("util", "lishinig", "私人插件", "1.4.2")
+@register("util", "lishinig", "私人插件", "1.5.0")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -497,6 +512,81 @@ class util(Star):
         if isinstance(raw_message, dict) and raw_message.get("self_id"):
             self_ids.add(str(raw_message["self_id"]))
         return self_ids
+
+    @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
+    @filter.command("群友史")
+    async def send_daily_group_history(self, event: AiocqhttpMessageEvent):
+        """每天随机抽取一名群友并生成群友史。"""
+        group_id = str(event.get_group_id() or "").strip()
+        if not group_id:
+            yield event.plain_result("群友史只能在群聊里生成。")
+            return
+
+        members = await self._fetch_group_history_members(event, group_id)
+        profiles = normalize_group_history_members(members)
+        profiles = filter_group_history_candidates(
+            profiles,
+            self._group_history_excluded_user_ids(event),
+        )
+        if not profiles:
+            fallback = self._group_history_sender_profile(event)
+            if fallback is None:
+                yield event.plain_result("没有找到可以写进群友史的对象。")
+                return
+            profiles = (fallback,)
+
+        today = date.today()
+        profile = select_daily_group_history_profile(profiles, group_id, today)
+        if profile is None:
+            yield event.plain_result("没有找到可以写进群友史的对象。")
+            return
+
+        entries = build_daily_group_history_entries(profile, group_id, today)
+        nodes = [
+            Comp.Node(
+                name=profile.nickname,
+                uin=profile.user_id,
+                content=[Comp.Plain(entry)],
+            )
+            for entry in entries
+        ]
+        yield event.chain_result([Comp.Nodes(nodes=nodes)])
+
+    async def _fetch_group_history_members(
+        self,
+        event: AiocqhttpMessageEvent,
+        group_id: str,
+    ) -> list[dict]:
+        bot = getattr(event, "bot", None)
+        api = getattr(bot, "api", None)
+        if api is None or not hasattr(api, "call_action"):
+            return []
+
+        payload_group_id = int(group_id) if group_id.isdigit() else group_id
+        try:
+            members = await api.call_action(
+                "get_group_member_list",
+                group_id=payload_group_id,
+                no_cache=True,
+            )
+        except Exception as exc:
+            logger.warning("[util] 获取群成员列表失败: %s", exc)
+            return []
+
+        return members if isinstance(members, list) else []
+
+    def _group_history_excluded_user_ids(self, event: AstrMessageEvent) -> set[str]:
+        return self._love_message_bot_ids(event)
+
+    def _group_history_sender_profile(
+        self,
+        event: AstrMessageEvent,
+    ) -> GroupHistoryProfile | None:
+        sender_id = str(event.get_sender_id() or "").strip()
+        if not self._validate_qq(sender_id):
+            return None
+        sender_name = str(event.get_sender_name() or "").strip() or f"群友{sender_id}"
+        return GroupHistoryProfile(user_id=sender_id, nickname=sender_name)
 
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
     async def reply_group_keyword_voice(self, event: AiocqhttpMessageEvent):
