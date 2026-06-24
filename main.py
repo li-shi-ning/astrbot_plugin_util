@@ -80,7 +80,7 @@ PLUGIN_ROOT = Path(__file__).resolve().parent
 LOVE_MESSAGES_PATH = (PLUGIN_ROOT / "core" / "love_messages.txt").resolve()
 
 
-@register("util", "lishinig", "私人插件", "1.5.5")
+@register("util", "lishinig", "私人插件", "1.5.6")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -257,6 +257,7 @@ class util(Star):
         stream_config = config_section("stream_output")
         debug_config = config_section("debug_logging")
         li_config = config_section("li_handoff")
+        group_history_config = config_section("group_history")
 
         self.enable_history_chunking_feature = config_value(
             history_config,
@@ -340,6 +341,11 @@ class util(Star):
         )
         self.li_platform_id = (
             config_value(li_config, "li_platform_id", "").strip() or None
+        )
+        self.enable_group_history_feature = config_value(
+            group_history_config,
+            "enable_group_history_feature",
+            True,
         )
         self.group_keyword_voices = load_group_keyword_voices(config)
         self.love_messages = load_love_messages(LOVE_MESSAGES_PATH)
@@ -522,6 +528,10 @@ class util(Star):
     @filter.command("群友史")
     async def on_group_history_request(self, event: AiocqhttpMessageEvent):
         """构造群友史聊天记录。"""
+        if not self.enable_group_history_feature:
+            yield event.plain_result("群友史功能已关闭。")
+            return
+
         message_text = event.message_str
 
         segments = parse_group_history_components(event.message_obj)

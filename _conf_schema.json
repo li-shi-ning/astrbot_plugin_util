@@ -42,6 +42,19 @@
       }
     }
   },
+  "group_history": {
+    "description": "群友史",
+    "type": "object",
+    "hint": "群友史聊天记录构造功能相关配置",
+    "items": {
+      "enable_group_history_feature": {
+        "description": "是否启用群友史聊天记录构造功能。关闭后 /群友史 会提示功能已关闭，不再生成合并转发聊天记录。",
+        "type": "bool",
+        "default": true,
+        "hint": "true / false"
+      }
+    }
+  },
   "history_chunking": {
     "description": "历史消息切割与读取工具",
     "type": "object",

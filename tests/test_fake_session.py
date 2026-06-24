@@ -49,8 +49,10 @@ async def collect(generator):
     return [item async for item in generator]
 
 
-def make_plugin() -> util:
-    return util.__new__(util)
+def make_plugin(enable_group_history_feature: bool = True) -> util:
+    plugin = util.__new__(util)
+    plugin.enable_group_history_feature = enable_group_history_feature
+    return plugin
 
 
 @pytest.mark.asyncio
@@ -210,6 +212,24 @@ async def test_group_history_request_reports_invalid_format():
     )
 
     assert results[0].message_str == GROUP_HISTORY_FORMAT_ERROR
+
+
+@pytest.mark.asyncio
+async def test_group_history_request_respects_disabled_switch():
+    plugin = make_plugin(enable_group_history_feature=False)
+
+    results = await collect(
+        plugin.on_group_history_request(
+            make_event(
+                "10001 你好",
+                [
+                    Comp.Plain("10001 你好"),
+                ],
+            )
+        )
+    )
+
+    assert results[0].message_str == "群友史功能已关闭。"
 
 
 @pytest.mark.asyncio

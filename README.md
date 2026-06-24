@@ -44,6 +44,8 @@ AstrBot 当前配置界面没有目录选择器，因此 `audio_directory` 使�
 
 节点昵称通过当前 AIOCQHTTP 适配器的 `get_stranger_info` 获取，不再访问第三方昵称接口。
 
+可在插件配置页的 `group_history.enable_group_history_feature` 中开启或关闭该功能，默认开启。关闭后 `/群友史` 会提示功能已关闭，不再生成合并转发聊天记录。
+
 ## 变更说明
 
 - 关键词命中后从配置的本地语音目录发送语音。
