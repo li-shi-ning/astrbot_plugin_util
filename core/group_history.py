@@ -4,8 +4,6 @@ import re
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-import aiohttp
-
 import astrbot.api.message_components as Comp
 from astrbot.api import logger
 
@@ -32,21 +30,24 @@ GROUP_HISTORY_HELP_TEXT = """📱 群友史聊天记录构造说明 📱
 """
 
 
-async def get_qq_nickname(qq_number: str) -> str:
-    """Fetch a QQ nickname for forward nodes."""
-    url = f"https://uapis.cn/api/v1/social/qq/userinfo?qq={qq_number}"
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as response:
-            if response.status == 200:
-                try:
-                    data = await response.json()
-                    logger.debug("[util] QQ昵称API返回: %s", data)
-                    nickname = data.get("nickname")
-                    if nickname:
-                        return str(nickname)
-                except Exception as exc:
-                    logger.debug("[util] 解析昵称出错: %s", exc)
-    return f"用户{qq_number}"
+async def get_qq_nickname(event: Any, qq: str) -> str | None:
+    """Fetch a QQ nickname from the active platform bot."""
+    bot = getattr(event, "bot", None)
+    if bot is None:
+        return None
+
+    payloads = {
+        "user_id": int(qq),
+        "no_cache": True,
+    }
+    try:
+        qq_info = await bot.api.call_action("get_stranger_info", **payloads)
+    except Exception as exc:
+        logger.debug("[util] 获取QQ昵称失败: %s", exc)
+        return None
+    if not isinstance(qq_info, dict):
+        return None
+    return qq_info.get("nick", None)
 
 
 def is_group_history_request(message_text: str) -> bool:
@@ -125,7 +126,8 @@ def parse_group_history_text(message_text: str) -> list[dict[str, Any]] | None:
 
 async def build_group_history_nodes(
     segments: list[dict[str, Any]],
-    nickname_resolver: Callable[[str], Awaitable[str]] = get_qq_nickname,
+    event: Any,
+    nickname_resolver: Callable[[Any, str], Awaitable[str | None]] = get_qq_nickname,
 ) -> list[Comp.Node]:
     nodes_list: list[Comp.Node] = []
     for segment in segments:
@@ -138,7 +140,7 @@ async def build_group_history_nodes(
             continue
 
         qq_number, content = match.group(1), match.group(2).strip()
-        nickname = await nickname_resolver(qq_number)
+        nickname = await nickname_resolver(event, qq_number)
         node_content = [Comp.Plain(content)]
 
         for img_url in images:

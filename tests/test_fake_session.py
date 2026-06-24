@@ -16,15 +16,27 @@ from core.group_history import (  # noqa: E402
     GROUP_HISTORY_FORMAT_ERROR,
     GROUP_HISTORY_HELP_TEXT,
     build_group_history_nodes,
+    get_qq_nickname,
     parse_group_history_components,
 )
 
 from main import util  # noqa: E402
 
 
-def make_event(message: str, components=None):
+class FakeApi:
+    def __init__(self, response=None):
+        self.response = response if response is not None else {}
+        self.calls = []
+
+    async def call_action(self, action, **payloads):
+        self.calls.append((action, payloads))
+        return self.response
+
+
+def make_event(message: str, components=None, bot=None):
     message_obj = SimpleNamespace(message=components or [])
     return SimpleNamespace(
+        bot=bot,
         message_str=message,
         message_obj=message_obj,
         plain_result=lambda text: SimpleNamespace(message_str=text),
@@ -61,7 +73,9 @@ async def test_parse_message_components_splits_segments_and_keeps_image_position
 
 @pytest.mark.asyncio
 async def test_build_group_history_nodes():
-    async def fake_get_qq_nickname(qq: str) -> str:
+    event = make_event("")
+
+    async def fake_get_qq_nickname(event, qq: str) -> str:
         return f"昵称{qq}"
 
     nodes = await build_group_history_nodes(
@@ -69,6 +83,7 @@ async def test_build_group_history_nodes():
             {"text": "10001 你好", "images": []},
             {"text": "10002 世界", "images": []},
         ],
+        event,
         fake_get_qq_nickname,
     )
 
@@ -84,7 +99,7 @@ async def test_build_group_history_nodes():
 async def test_group_history_request_builds_forward_nodes(monkeypatch):
     plugin = make_plugin()
 
-    async def fake_get_qq_nickname(qq: str) -> str:
+    async def fake_get_qq_nickname(event, qq: str) -> str:
         return f"昵称{qq}"
 
     monkeypatch.setattr(
@@ -111,6 +126,30 @@ async def test_group_history_request_builds_forward_nodes(monkeypatch):
     assert nodes[0].content[0].text == "你好"
     assert nodes[1].uin == "10002"
     assert nodes[1].content[0].text == "世界"
+
+
+@pytest.mark.asyncio
+async def test_get_qq_nickname_uses_bot_stranger_info_api():
+    api = FakeApi({"nick": "群友甲"})
+    event = make_event("", bot=SimpleNamespace(api=api))
+
+    nickname = await get_qq_nickname(event, "10001")
+
+    assert nickname == "群友甲"
+    assert api.calls == [
+        (
+            "get_stranger_info",
+            {
+                "user_id": 10001,
+                "no_cache": True,
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_qq_nickname_returns_none_without_bot():
+    assert await get_qq_nickname(make_event(""), "10001") is None
 
 
 @pytest.mark.asyncio

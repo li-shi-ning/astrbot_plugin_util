@@ -82,7 +82,7 @@ PLUGIN_ROOT = Path(__file__).resolve().parent
 LOVE_MESSAGES_PATH = (PLUGIN_ROOT / "core" / "love_messages.txt").resolve()
 
 
-@register("util", "lishinig", "私人插件", "1.5.2")
+@register("util", "lishinig", "私人插件", "1.5.3")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -535,7 +535,7 @@ class util(Star):
                 yield event.plain_result(GROUP_HISTORY_FORMAT_ERROR)
                 return
 
-        nodes_list = await build_group_history_nodes(segments, get_qq_nickname)
+        nodes_list = await build_group_history_nodes(segments, event, get_qq_nickname)
         if nodes_list:
             yield event.chain_result([Comp.Nodes(nodes=nodes_list)])
         else:
