@@ -203,8 +203,9 @@ async def test_select_music_command_sends_detail_cover_and_record():
     assert "歌名：Lemon" in results[0].chain[0].text
     assert isinstance(results[0].chain[1], Comp.Image)
     assert results[0].chain[1].file == "https://music.example/cover.jpg"
-    assert isinstance(results[1].chain[0], Comp.Record)
-    assert results[1].chain[0].file == "https://music.example/song.mp3"
+    assert isinstance(results[0].chain[2], Comp.Record)
+    assert results[0].chain[2].file == "https://music.example/song.mp3"
+    assert len(results) == 1
     assert plugin.music_pending_selections == {}
     assert plugin.music_song_cache == {}
 

@@ -113,7 +113,7 @@ PLUGIN_ROOT = Path(__file__).resolve().parent
 LOVE_MESSAGES_PATH = (PLUGIN_ROOT / "core" / "love_messages.txt").resolve()
 
 
-@register("util", "lishinig", "私人插件", "1.6.0")
+@register("util", "lishinig", "私人插件", "1.6.1")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -658,8 +658,8 @@ class util(Star):
         components: list[Any] = [Comp.Plain(detail_text)]
         if cover_url:
             components.append(Comp.Image.fromURL(cover_url))
+        components.append(Comp.Record.fromURL(audio_url))
         yield event.chain_result(components)
-        yield event.chain_result([Comp.Record.fromURL(audio_url)])
 
     def _music_api(self) -> NeteaseMusicAPI:
         return NeteaseMusicAPI(self.music_search_config.api_base_url)
