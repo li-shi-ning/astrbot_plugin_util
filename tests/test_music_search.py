@@ -66,9 +66,13 @@ def make_plugin(config: MusicConfig | None = None, api=None) -> util:
 
 def make_event(message: str, session_id: str = "session-1"):
     stopped = {"value": False}
+    sent = []
 
     def stop_event():
         stopped["value"] = True
+
+    async def send(chain):
+        sent.append(chain)
 
     event = SimpleNamespace(
         message_str=message,
@@ -77,6 +81,8 @@ def make_event(message: str, session_id: str = "session-1"):
         get_session_id=lambda: session_id,
         stop_event=stop_event,
         stopped=stopped,
+        send=send,
+        sent=sent,
     )
     return event
 
@@ -203,9 +209,9 @@ async def test_select_music_command_sends_detail_cover_and_record():
     assert "歌名：Lemon" in results[0].chain[0].text
     assert isinstance(results[0].chain[1], Comp.Image)
     assert results[0].chain[1].file == "https://music.example/cover.jpg"
-    assert isinstance(results[0].chain[2], Comp.Record)
-    assert results[0].chain[2].file == "https://music.example/song.mp3"
     assert len(results) == 1
+    assert isinstance(event.sent[0].chain[0], Comp.Record)
+    assert event.sent[0].chain[0].file == "https://music.example/song.mp3"
     assert plugin.music_pending_selections == {}
     assert plugin.music_song_cache == {}
 

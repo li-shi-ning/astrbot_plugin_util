@@ -16,7 +16,7 @@ import astrbot.api.message_components as Comp
 from astrbot.api import logger
 
 # ====== API 模块 ======
-from astrbot.api.event import AstrMessageEvent, filter
+from astrbot.api.event import AstrMessageEvent, MessageChain, filter
 from astrbot.api.provider import ProviderRequest
 from astrbot.api.star import Context, Star, register
 from astrbot.core.config import AstrBotConfig
@@ -113,7 +113,7 @@ PLUGIN_ROOT = Path(__file__).resolve().parent
 LOVE_MESSAGES_PATH = (PLUGIN_ROOT / "core" / "love_messages.txt").resolve()
 
 
-@register("util", "lishinig", "私人插件", "1.6.1")
+@register("util", "lishinig", "私人插件", "1.6.2")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -658,8 +658,24 @@ class util(Star):
         components: list[Any] = [Comp.Plain(detail_text)]
         if cover_url:
             components.append(Comp.Image.fromURL(cover_url))
-        components.append(Comp.Record.fromURL(audio_url))
         yield event.chain_result(components)
+        await self._send_music_record(event, audio_url)
+
+    async def _send_music_record(self, event: AstrMessageEvent, audio_url: str) -> None:
+        logger.info("[util] 准备发送点歌音频: %s", audio_url)
+        try:
+            await event.send(MessageChain([Comp.Record.fromURL(audio_url)]))
+        except Exception as exc:
+            logger.error("[util] 点歌音频发送失败: %s", exc, exc_info=True)
+            await event.send(
+                MessageChain(
+                    [
+                        Comp.Plain(
+                            f"音频发送失败，请点击播放链接：{audio_url}",
+                        )
+                    ]
+                )
+            )
 
     def _music_api(self) -> NeteaseMusicAPI:
         return NeteaseMusicAPI(self.music_search_config.api_base_url)
