@@ -12,6 +12,13 @@ PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 if str(PLUGIN_ROOT) not in sys.path:
     sys.path.insert(0, str(PLUGIN_ROOT))
 
+from core.group_history import (  # noqa: E402
+    GROUP_HISTORY_FORMAT_ERROR,
+    GROUP_HISTORY_HELP_TEXT,
+    build_group_history_nodes,
+    parse_group_history_components,
+)
+
 from main import util  # noqa: E402
 
 
@@ -35,17 +42,16 @@ def make_plugin() -> util:
 
 @pytest.mark.asyncio
 async def test_parse_message_components_splits_segments_and_keeps_image_position():
-    plugin = make_plugin()
     image = Comp.Image(file="", url="https://example.com/a.jpg")
     message_obj = SimpleNamespace(
         message=[
-            Comp.Plain("伪造消息 10001 第一段"),
+            Comp.Plain("群友史 10001 第一段"),
             image,
             Comp.Plain(" | 10002 第二段"),
         ]
     )
 
-    segments = await plugin.parse_message_components(message_obj)
+    segments = parse_group_history_components(message_obj)
 
     assert segments == [
         {"text": "10001 第一段 ", "images": ["https://example.com/a.jpg"]},
@@ -54,24 +60,44 @@ async def test_parse_message_components_splits_segments_and_keeps_image_position
 
 
 @pytest.mark.asyncio
-async def test_fake_message_request_builds_forward_nodes(monkeypatch):
+async def test_build_group_history_nodes():
+    async def fake_get_qq_nickname(qq: str) -> str:
+        return f"昵称{qq}"
+
+    nodes = await build_group_history_nodes(
+        [
+            {"text": "10001 你好", "images": []},
+            {"text": "10002 世界", "images": []},
+        ],
+        fake_get_qq_nickname,
+    )
+
+    assert len(nodes) == 2
+    assert nodes[0].uin == "10001"
+    assert nodes[0].name == "昵称10001"
+    assert nodes[0].content[0].text == "你好"
+    assert nodes[1].uin == "10002"
+    assert nodes[1].content[0].text == "世界"
+
+
+@pytest.mark.asyncio
+async def test_group_history_request_builds_forward_nodes(monkeypatch):
     plugin = make_plugin()
 
     async def fake_get_qq_nickname(qq: str) -> str:
         return f"昵称{qq}"
 
     monkeypatch.setattr(
-        plugin,
-        "get_qq_nickname",
+        "main.get_qq_nickname",
         fake_get_qq_nickname,
     )
 
     results = await collect(
-        plugin.on_fake_message_request(
+        plugin.on_group_history_request(
             make_event(
-                "伪造消息 10001 你好 | 10002 世界",
+                "群友史 10001 你好 | 10002 世界",
                 [
-                    Comp.Plain("伪造消息 10001 你好 | 10002 世界"),
+                    Comp.Plain("群友史 10001 你好 | 10002 世界"),
                 ],
             )
         )
@@ -88,33 +114,50 @@ async def test_fake_message_request_builds_forward_nodes(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_fake_message_request_ignores_unrelated_messages():
+async def test_legacy_fake_message_request_is_ignored():
     plugin = make_plugin()
 
-    results = await collect(plugin.on_fake_message_request(make_event("普通消息")))
+    results = await collect(
+        plugin.on_group_history_request(
+            make_event(
+                "伪造消息 10001 你好 | 10002 世界",
+                [
+                    Comp.Plain("伪造消息 10001 你好 | 10002 世界"),
+                ],
+            )
+        )
+    )
 
     assert results == []
 
 
 @pytest.mark.asyncio
-async def test_fake_message_request_reports_invalid_format():
+async def test_group_history_request_ignores_unrelated_messages():
     plugin = make_plugin()
 
-    results = await collect(
-        plugin.on_fake_message_request(
-            make_event("伪造消息 格式错误", [])
-        )
-    )
+    results = await collect(plugin.on_group_history_request(make_event("普通消息")))
 
-    assert results[0].message_str == (
-        "格式错误，请使用：伪造消息 QQ号 内容 | QQ号 内容 | ..."
-    )
+    assert results == []
 
 
 @pytest.mark.asyncio
-async def test_fake_message_help_command():
+async def test_group_history_request_reports_invalid_format():
     plugin = make_plugin()
 
-    results = await collect(plugin.fake_message_help_command(make_event("")))
+    results = await collect(
+        plugin.on_group_history_request(
+            make_event("群友史 格式错误", [])
+        )
+    )
 
-    assert "伪造消息 QQ号 消息内容" in results[0].message_str
+    assert results[0].message_str == GROUP_HISTORY_FORMAT_ERROR
+
+
+@pytest.mark.asyncio
+async def test_group_history_help_command():
+    plugin = make_plugin()
+
+    results = await collect(plugin.group_history_help_command(make_event("")))
+
+    assert "群友史 QQ号 消息内容" in results[0].message_str
+    assert results[0].message_str == GROUP_HISTORY_HELP_TEXT
