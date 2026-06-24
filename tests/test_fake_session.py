@@ -18,6 +18,7 @@ from core.group_history import (  # noqa: E402
     build_group_history_nodes,
     get_qq_nickname,
     parse_group_history_components,
+    parse_group_history_text,
 )
 
 from main import util  # noqa: E402
@@ -110,9 +111,9 @@ async def test_group_history_request_builds_forward_nodes(monkeypatch):
     results = await collect(
         plugin.on_group_history_request(
             make_event(
-                "群友史 10001 你好 | 10002 世界",
+                "10001 你好 | 10002 世界",
                 [
-                    Comp.Plain("群友史 10001 你好 | 10002 世界"),
+                    Comp.Plain("10001 你好 | 10002 世界"),
                 ],
             )
         )
@@ -126,6 +127,52 @@ async def test_group_history_request_builds_forward_nodes(monkeypatch):
     assert nodes[0].content[0].text == "你好"
     assert nodes[1].uin == "10002"
     assert nodes[1].content[0].text == "世界"
+
+
+def test_parse_group_history_text_accepts_command_stripped_arguments():
+    assert parse_group_history_text("10001 你好 | 10002 世界") == [
+        {"text": "10001 你好", "images": []},
+        {"text": "10002 世界", "images": []},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_build_group_history_nodes_deduplicates_nickname_lookup():
+    event = make_event("")
+    called_qq_numbers = []
+
+    async def fake_get_qq_nickname(event, qq: str) -> str:
+        called_qq_numbers.append(qq)
+        return f"昵称{qq}"
+
+    nodes = await build_group_history_nodes(
+        [
+            {"text": "10001 第一段", "images": []},
+            {"text": "10001 第二段", "images": []},
+            {"text": "10002 第三段", "images": []},
+        ],
+        event,
+        fake_get_qq_nickname,
+    )
+
+    assert called_qq_numbers == ["10001", "10002"]
+    assert [node.name for node in nodes] == ["昵称10001", "昵称10001", "昵称10002"]
+
+
+@pytest.mark.asyncio
+async def test_build_group_history_nodes_defaults_name_when_lookup_fails():
+    event = make_event("")
+
+    async def fake_get_qq_nickname(event, qq: str) -> None:
+        return None
+
+    nodes = await build_group_history_nodes(
+        [{"text": "10001 你好", "images": []}],
+        event,
+        fake_get_qq_nickname,
+    )
+
+    assert nodes[0].name == "QQ用户"
 
 
 @pytest.mark.asyncio
@@ -153,39 +200,12 @@ async def test_get_qq_nickname_returns_none_without_bot():
 
 
 @pytest.mark.asyncio
-async def test_legacy_fake_message_request_is_ignored():
-    plugin = make_plugin()
-
-    results = await collect(
-        plugin.on_group_history_request(
-            make_event(
-                "伪造消息 10001 你好 | 10002 世界",
-                [
-                    Comp.Plain("伪造消息 10001 你好 | 10002 世界"),
-                ],
-            )
-        )
-    )
-
-    assert results == []
-
-
-@pytest.mark.asyncio
-async def test_group_history_request_ignores_unrelated_messages():
-    plugin = make_plugin()
-
-    results = await collect(plugin.on_group_history_request(make_event("普通消息")))
-
-    assert results == []
-
-
-@pytest.mark.asyncio
 async def test_group_history_request_reports_invalid_format():
     plugin = make_plugin()
 
     results = await collect(
         plugin.on_group_history_request(
-            make_event("群友史 格式错误", [])
+            make_event("格式错误", [])
         )
     )
 

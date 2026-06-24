@@ -38,7 +38,6 @@ try:
         GROUP_HISTORY_HELP_TEXT,
         build_group_history_nodes,
         get_qq_nickname,
-        is_group_history_request,
         parse_group_history_components,
         parse_group_history_text,
     )
@@ -57,7 +56,6 @@ except ImportError:
         GROUP_HISTORY_HELP_TEXT,
         build_group_history_nodes,
         get_qq_nickname,
-        is_group_history_request,
         parse_group_history_components,
         parse_group_history_text,
     )
@@ -82,7 +80,7 @@ PLUGIN_ROOT = Path(__file__).resolve().parent
 LOVE_MESSAGES_PATH = (PLUGIN_ROOT / "core" / "love_messages.txt").resolve()
 
 
-@register("util", "lishinig", "私人插件", "1.5.3")
+@register("util", "lishinig", "私人插件", "1.5.5")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -521,12 +519,10 @@ class util(Star):
         return self_ids
 
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
-    @filter.event_message_type(filter.EventMessageType.ALL)
+    @filter.command("群友史")
     async def on_group_history_request(self, event: AiocqhttpMessageEvent):
-        """监听所有消息并检测群友史请求。"""
+        """构造群友史聊天记录。"""
         message_text = event.message_str
-        if not is_group_history_request(message_text):
-            return
 
         segments = parse_group_history_components(event.message_obj)
         if not segments:

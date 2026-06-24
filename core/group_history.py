@@ -7,7 +7,6 @@ from typing import Any
 import astrbot.api.message_components as Comp
 from astrbot.api import logger
 
-GROUP_HISTORY_PREFIX = "群友史"
 GROUP_HISTORY_HELP_COMMAND = "群友史帮助"
 GROUP_HISTORY_FORMAT_ERROR = (
     "格式错误，请使用：群友史 QQ号 内容 | QQ号 内容 | ..."
@@ -50,10 +49,6 @@ async def get_qq_nickname(event: Any, qq: str) -> str | None:
     return qq_info.get("nick", None)
 
 
-def is_group_history_request(message_text: str) -> bool:
-    return message_text.startswith(GROUP_HISTORY_PREFIX)
-
-
 def parse_group_history_components(message_obj: Any) -> list[dict[str, Any]]:
     """Parse message components and attach images to their text segment."""
     segments: list[dict[str, Any]] = []
@@ -68,11 +63,9 @@ def parse_group_history_components(message_obj: Any) -> list[dict[str, Any]]:
                 if isinstance(comp, Comp.Plain):
                     text = comp.text
 
-                    if not prefix_skipped and GROUP_HISTORY_PREFIX in text:
-                        prefix_pos = text.find(GROUP_HISTORY_PREFIX)
-                        text = text[
-                            prefix_pos + len(GROUP_HISTORY_PREFIX) :
-                        ].lstrip()
+                    if not prefix_skipped and "群友史" in text:
+                        prefix_pos = text.find("群友史")
+                        text = text[prefix_pos + len("群友史") :].lstrip()
                         prefix_skipped = True
 
                     if "|" in text:
@@ -111,17 +104,21 @@ def parse_group_history_components(message_obj: Any) -> list[dict[str, Any]]:
 
 
 def parse_group_history_text(message_text: str) -> list[dict[str, Any]] | None:
-    pattern = rf"{GROUP_HISTORY_PREFIX}((?:\s+\d+\s+[^|]+\|)+)"
-    match = re.search(pattern, message_text)
-    if not match:
+    content = message_text.strip()
+    if content.startswith("群友史"):
+        content = content[len("群友史") :].strip()
+
+    if not content:
         return None
 
-    content = match.group(1).strip()
-    return [
+    segments = [
         {"text": segment.strip(), "images": []}
         for segment in content.split("|")
         if segment.strip()
     ]
+    if not any(re.match(r"^\s*\d+\s+.*", segment["text"]) for segment in segments):
+        return None
+    return segments
 
 
 async def build_group_history_nodes(
@@ -129,18 +126,31 @@ async def build_group_history_nodes(
     event: Any,
     nickname_resolver: Callable[[Any, str], Awaitable[str | None]] = get_qq_nickname,
 ) -> list[Comp.Node]:
-    nodes_list: list[Comp.Node] = []
+    parsed_segments: list[tuple[str, str, list[str]]] = []
+    qq_numbers: list[str] = []
+    seen_qq_numbers: set[str] = set()
+
     for segment in segments:
         text = segment["text"]
-        images = segment["images"]
-
         match = re.match(r"^\s*(\d+)\s+(.*)", text)
         if not match:
             logger.debug("[util] 群友史段落格式错误，跳过: %s", text)
             continue
 
         qq_number, content = match.group(1), match.group(2).strip()
+        parsed_segments.append((qq_number, content, segment["images"]))
+        if qq_number not in seen_qq_numbers:
+            seen_qq_numbers.add(qq_number)
+            qq_numbers.append(qq_number)
+
+    nicknames: dict[str, str] = {}
+    for qq_number in qq_numbers:
         nickname = await nickname_resolver(event, qq_number)
+        nicknames[qq_number] = nickname or "QQ用户"
+
+    nodes_list: list[Comp.Node] = []
+    for qq_number, content, images in parsed_segments:
+        nickname = nicknames[qq_number]
         node_content = [Comp.Plain(content)]
 
         for img_url in images:
