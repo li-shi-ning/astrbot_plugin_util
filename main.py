@@ -29,6 +29,7 @@ from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
 )
 from astrbot.core.star.star import star_map
 from astrbot.core.star.star_handler import EventType, star_handlers_registry
+from astrbot.core.utils.astrbot_path import get_astrbot_plugin_data_path
 
 # ====== 核心库 ======
 try:
@@ -130,11 +131,12 @@ SUPPORTED_KEYWORD_VOICE_SUFFIXES = {
 
 PLUGIN_ROOT = Path(__file__).resolve().parent
 LOVE_MESSAGES_PATH = (PLUGIN_ROOT / "core" / "love_messages.txt").resolve()
-NETEASE_LOGIN_DATA_DIR = (PLUGIN_ROOT / "data" / "netease_login").resolve()
+PLUGIN_DATA_DIR = (Path(get_astrbot_plugin_data_path()) / "astrbot_plugin_util").resolve()
+NETEASE_LOGIN_DATA_DIR = (PLUGIN_DATA_DIR / "netease_login").resolve()
 NETEASE_COOKIE_PATH = (NETEASE_LOGIN_DATA_DIR / "cookie.json").resolve()
 
 
-@register("util", "lishinig", "私人插件", "1.6.5")
+@register("util", "lishinig", "私人插件", "1.6.6")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)

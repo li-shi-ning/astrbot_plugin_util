@@ -51,9 +51,6 @@ coverage.xml
 .pytest_cache/
 cover/
 
-# Runtime secrets and generated login QR images
-data/netease_login/
-
 # Translations
 *.mo
 *.pot

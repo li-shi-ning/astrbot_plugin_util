@@ -30,6 +30,7 @@ from core.music_search import (  # noqa: E402
     normalize_api_base_url,
 )
 
+import main  # noqa: E402
 from main import util  # noqa: E402
 
 
@@ -148,6 +149,13 @@ def test_build_music_config_normalizes_api_url_and_limits_values():
 
 def test_normalize_api_base_url_uses_default_when_blank():
     assert normalize_api_base_url("") == DEFAULT_MUSIC_API_BASE_URL
+
+
+def test_netease_login_uses_astrbot_plugin_data_dir():
+    path_text = str(main.NETEASE_COOKIE_PATH).replace("\\", "/")
+
+    assert "/data/plugin_data/astrbot_plugin_util/netease_login/cookie.json" in path_text
+    assert "/data/plugins/astrbot_plugin_util/data/" not in path_text
 
 
 def test_format_duration():

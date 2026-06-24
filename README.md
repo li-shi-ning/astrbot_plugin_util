@@ -46,7 +46,7 @@ AstrBot 当前配置界面没有目录选择器，因此 `audio_directory` 使�
 
 可通过 `music_search.enable_music_search_feature` 开启或关闭该功能；关闭后 `/点歌` 会提示功能已关闭。`quality` 控制优先音质，音频链接不可用时会依次尝试 `exhigh`、`higher`、`standard`。
 
-需要使用 VIP 账号访问会员音乐时，发送 `/网易云登录` 并用网易云音乐 App 扫码确认。登录成功后插件会把接口返回的 Cookie 持久化保存到插件数据目录，重启后会自动读取，后续点歌会自动携带该登录态。`music_search.cookie` 仍可手动填写作为备用配置。Cookie 属于账号凭据，请只在可信环境中使用登录指令。
+需要使用 VIP 账号访问会员音乐时，发送 `/网易云登录` 并用网易云音乐 App 扫码确认。登录成功后插件会把接口返回的 Cookie 持久化保存到 AstrBot 插件数据目录 `data/plugin_data/astrbot_plugin_util/netease_login/cookie.json`，重启后会自动读取，后续点歌会自动携带该登录态。`music_search.cookie` 仍可手动填写作为备用配置。Cookie 属于账号凭据，请只在可信环境中使用登录指令。
 
 ## 群友史
 
