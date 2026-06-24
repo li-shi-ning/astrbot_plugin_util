@@ -51,6 +51,12 @@ try:
     from .core.music_search import (
         MUSIC_AUDIO_UNAVAILABLE_MESSAGE,
         MUSIC_DETAIL_ERROR_MESSAGE,
+        MUSIC_LOGIN_API_ERROR_MESSAGE,
+        MUSIC_LOGIN_EXPIRED_MESSAGE,
+        MUSIC_LOGIN_NO_COOKIE_MESSAGE,
+        MUSIC_LOGIN_QR_MESSAGE,
+        MUSIC_LOGIN_SUCCESS_MESSAGE,
+        MUSIC_LOGIN_TIMEOUT_MESSAGE,
         MUSIC_SEARCH_API_ERROR_MESSAGE,
         MUSIC_SEARCH_DISABLED_MESSAGE,
         MUSIC_SEARCH_EMPTY_MESSAGE,
@@ -63,6 +69,7 @@ try:
         format_search_results,
         format_song_detail,
         pending_selection_is_expired,
+        save_qr_image,
     )
 except ImportError:
     from core.Filter import register_pack_type
@@ -85,6 +92,12 @@ except ImportError:
     from core.music_search import (
         MUSIC_AUDIO_UNAVAILABLE_MESSAGE,
         MUSIC_DETAIL_ERROR_MESSAGE,
+        MUSIC_LOGIN_API_ERROR_MESSAGE,
+        MUSIC_LOGIN_EXPIRED_MESSAGE,
+        MUSIC_LOGIN_NO_COOKIE_MESSAGE,
+        MUSIC_LOGIN_QR_MESSAGE,
+        MUSIC_LOGIN_SUCCESS_MESSAGE,
+        MUSIC_LOGIN_TIMEOUT_MESSAGE,
         MUSIC_SEARCH_API_ERROR_MESSAGE,
         MUSIC_SEARCH_DISABLED_MESSAGE,
         MUSIC_SEARCH_EMPTY_MESSAGE,
@@ -97,6 +110,7 @@ except ImportError:
         format_search_results,
         format_song_detail,
         pending_selection_is_expired,
+        save_qr_image,
     )
 
 
@@ -113,7 +127,7 @@ PLUGIN_ROOT = Path(__file__).resolve().parent
 LOVE_MESSAGES_PATH = (PLUGIN_ROOT / "core" / "love_messages.txt").resolve()
 
 
-@register("util", "lishinig", "私人插件", "1.6.3")
+@register("util", "lishinig", "私人插件", "1.6.4")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -561,6 +575,56 @@ class util(Star):
             self_ids.add(str(raw_message["self_id"]))
         return self_ids
 
+    @filter.command("网易云登录", alias={"音乐登录", "点歌登录"})
+    async def login_netease_music_command(self, event: AstrMessageEvent):
+        """Send a NetEase Cloud Music QR code and persist the returned cookie."""
+        event.stop_event()
+        api = self._music_api()
+        try:
+            login = await api.create_qr_login()
+            qr_path = save_qr_image(
+                login.qr_image,
+                PLUGIN_ROOT / "data" / "netease_login",
+                login.key,
+            )
+        except Exception as exc:
+            logger.warning("[util] 网易云扫码登录二维码生成失败: %s", exc)
+            await event.send(MessageChain([Comp.Plain(MUSIC_LOGIN_API_ERROR_MESSAGE)]))
+            return
+
+        await event.send(
+            MessageChain(
+                [
+                    Comp.Plain(MUSIC_LOGIN_QR_MESSAGE),
+                    Comp.Image.fromFileSystem(str(qr_path)),
+                ]
+            )
+        )
+
+        deadline = asyncio.get_running_loop().time() + 120
+        while asyncio.get_running_loop().time() < deadline:
+            await asyncio.sleep(3)
+            try:
+                status = await api.check_qr_login(login.key)
+            except Exception as exc:
+                logger.warning("[util] 网易云扫码登录状态检查失败: %s", exc)
+                await event.send(MessageChain([Comp.Plain(MUSIC_LOGIN_API_ERROR_MESSAGE)]))
+                return
+
+            if status.code == 803:
+                if not status.cookie:
+                    await event.send(MessageChain([Comp.Plain(MUSIC_LOGIN_NO_COOKIE_MESSAGE)]))
+                    return
+                self._save_music_cookie(status.cookie)
+                await event.send(MessageChain([Comp.Plain(MUSIC_LOGIN_SUCCESS_MESSAGE)]))
+                return
+
+            if status.code == 800:
+                await event.send(MessageChain([Comp.Plain(MUSIC_LOGIN_EXPIRED_MESSAGE)]))
+                return
+
+        await event.send(MessageChain([Comp.Plain(MUSIC_LOGIN_TIMEOUT_MESSAGE)]))
+
     @filter.command("点歌", alias={"music", "听歌", "网易云"})
     async def search_music_command(self, event: AstrMessageEvent, keyword: str = ""):
         """Search music and wait for a numeric selection."""
@@ -680,6 +744,15 @@ class util(Star):
 
     def _music_api(self) -> NeteaseMusicAPI:
         return NeteaseMusicAPI(self.music_search_config.api_base_url)
+
+    def _save_music_cookie(self, cookie: str) -> None:
+        music_section = self.config.get("music_search")
+        if not isinstance(music_section, dict):
+            music_section = {}
+            self.config["music_search"] = music_section
+        music_section["cookie"] = cookie
+        self.config.save_config()
+        self.music_search_config = build_music_config(music_section)
 
     def _remove_music_selection(self, session_id: str, cache_key: str) -> None:
         self.music_pending_selections.pop(session_id, None)

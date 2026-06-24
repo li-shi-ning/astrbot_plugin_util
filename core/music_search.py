@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import aiohttp
@@ -18,6 +21,12 @@ MUSIC_SELECTION_EXPIRED_MESSAGE = "点歌选择已过期，请重新搜索。"
 MUSIC_SELECTION_INVALID_MESSAGE = "请选择列表中的歌曲编号。"
 MUSIC_AUDIO_UNAVAILABLE_MESSAGE = "这首歌暂时没有可播放的音频链接。"
 MUSIC_DETAIL_ERROR_MESSAGE = "获取歌曲详情失败，请稍后再试。"
+MUSIC_LOGIN_QR_MESSAGE = "请使用网易云音乐 App 扫码登录，二维码 2 分钟内有效。"
+MUSIC_LOGIN_SUCCESS_MESSAGE = "网易云音乐登录成功，Cookie 已保存到插件配置。"
+MUSIC_LOGIN_EXPIRED_MESSAGE = "网易云音乐登录二维码已过期，请重新发送 /网易云登录。"
+MUSIC_LOGIN_TIMEOUT_MESSAGE = "等待扫码登录超时，请重新发送 /网易云登录。"
+MUSIC_LOGIN_API_ERROR_MESSAGE = "网易云音乐登录服务暂时连接失败，请稍后再试。"
+MUSIC_LOGIN_NO_COOKIE_MESSAGE = "网易云音乐已确认登录，但接口没有返回 Cookie，请重新登录。"
 
 
 @dataclass(frozen=True)
@@ -34,6 +43,19 @@ class MusicConfig:
 class PendingMusicSelection:
     cache_key: str
     expires_at: float
+
+
+@dataclass(frozen=True)
+class NeteaseQrLogin:
+    key: str
+    qr_image: str
+
+
+@dataclass(frozen=True)
+class NeteaseQrLoginStatus:
+    code: int
+    message: str
+    cookie: str = ""
 
 
 def normalize_api_base_url(value: str | None) -> str:
@@ -119,6 +141,21 @@ def pending_selection_is_expired(selection: PendingMusicSelection, now: float | 
     return (now if now is not None else time.time()) > selection.expires_at
 
 
+def save_qr_image(qr_image: str, directory: Path, key: str) -> Path:
+    """Persist an API qrimg data URL as a local PNG file."""
+    if "," in qr_image:
+        _, qr_image = qr_image.split(",", 1)
+    try:
+        image_bytes = base64.b64decode(qr_image, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ValueError("Invalid QR image data.") from exc
+
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"netease-login-{key}.png"
+    path.write_bytes(image_bytes)
+    return path
+
+
 class NeteaseMusicAPI:
     def __init__(self, api_base_url: str, timeout_seconds: int = 20):
         self.api_base_url = normalize_api_base_url(api_base_url)
@@ -172,6 +209,37 @@ class NeteaseMusicAPI:
             if audio_url:
                 return audio_url
         return None
+
+    async def create_qr_login(self) -> NeteaseQrLogin:
+        key_data = await self._get_json("/login/qr/key", {})
+        key = str(key_data.get("data", {}).get("unikey") or "").strip()
+        if not key:
+            raise ValueError("Netease QR login key is empty.")
+
+        qr_data = await self._get_json(
+            "/login/qr/create",
+            {
+                "key": key,
+                "qrimg": "true",
+            },
+        )
+        qr_image = str(qr_data.get("data", {}).get("qrimg") or "").strip()
+        if not qr_image:
+            raise ValueError("Netease QR image is empty.")
+        return NeteaseQrLogin(key=key, qr_image=qr_image)
+
+    async def check_qr_login(self, key: str) -> NeteaseQrLoginStatus:
+        data = await self._get_json(
+            "/login/qr/check",
+            {
+                "key": key,
+                "timestamp": str(int(time.time() * 1000)),
+            },
+        )
+        code = int(data.get("code") or 0)
+        message = str(data.get("message") or data.get("msg") or "").strip()
+        cookie = str(data.get("cookie") or "").strip()
+        return NeteaseQrLoginStatus(code=code, message=message, cookie=cookie)
 
 
 def build_music_config(section_config: dict[str, Any]) -> MusicConfig:

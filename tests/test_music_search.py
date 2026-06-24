@@ -14,10 +14,14 @@ if str(PLUGIN_ROOT) not in sys.path:
 
 from core.music_search import (  # noqa: E402
     DEFAULT_MUSIC_API_BASE_URL,
+    MUSIC_LOGIN_EXPIRED_MESSAGE,
+    MUSIC_LOGIN_SUCCESS_MESSAGE,
     MUSIC_SEARCH_DISABLED_MESSAGE,
     MUSIC_SEARCH_USAGE,
     MUSIC_SELECTION_INVALID_MESSAGE,
     MusicConfig,
+    NeteaseQrLogin,
+    NeteaseQrLoginStatus,
     build_music_config,
     format_duration,
     format_search_results,
@@ -33,13 +37,19 @@ class FakeMusicApi:
         songs=None,
         detail=None,
         audio_url="https://music.example/song.mp3",
+        qr_login=None,
+        login_statuses=None,
     ):
         self.songs = songs or []
         self.detail = detail
         self.audio_url = audio_url
+        self.qr_login = qr_login
+        self.login_statuses = list(login_statuses or [])
         self.search_calls = []
         self.detail_calls = []
         self.audio_calls = []
+        self.create_qr_login_calls = 0
+        self.check_qr_login_calls = []
 
     async def search_songs(self, keyword, limit):
         self.search_calls.append((keyword, limit))
@@ -53,12 +63,39 @@ class FakeMusicApi:
         self.audio_calls.append((song_id, quality, cookie))
         return self.audio_url
 
+    async def create_qr_login(self):
+        self.create_qr_login_calls += 1
+        return self.qr_login or NeteaseQrLogin(
+            key="test-key",
+            qr_image=(
+                "data:image/png;base64,"
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAA"
+                "DUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+            ),
+        )
 
-def make_plugin(config: MusicConfig | None = None, api=None) -> util:
+    async def check_qr_login(self, key):
+        self.check_qr_login_calls.append(key)
+        if self.login_statuses:
+            return self.login_statuses.pop(0)
+        return NeteaseQrLoginStatus(code=801, message="等待扫码")
+
+
+class FakeConfig(dict):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.saved = False
+
+    def save_config(self):
+        self.saved = True
+
+
+def make_plugin(config: MusicConfig | None = None, api=None, raw_config=None) -> util:
     plugin = util.__new__(util)
     plugin.music_search_config = config or MusicConfig()
     plugin.music_pending_selections = {}
     plugin.music_song_cache = {}
+    plugin.config = raw_config or FakeConfig({"music_search": {}})
     if api is not None:
         plugin._music_api = lambda: api
     return plugin
@@ -235,3 +272,55 @@ async def test_select_music_command_rejects_invalid_number():
     results = await collect(plugin.select_music_command(make_event("2")))
 
     assert results[0].message_str == MUSIC_SELECTION_INVALID_MESSAGE
+
+
+@pytest.mark.asyncio
+async def test_login_netease_music_command_saves_cookie(monkeypatch, tmp_path):
+    async def fast_sleep(_seconds):
+        return None
+
+    monkeypatch.setattr("main.PLUGIN_ROOT", tmp_path)
+    monkeypatch.setattr("main.asyncio.sleep", fast_sleep)
+    raw_config = FakeConfig({"music_search": {"api_base_url": "64.90.12.120:3051"}})
+    api = FakeMusicApi(
+        login_statuses=[
+            NeteaseQrLoginStatus(
+                code=803,
+                message="授权登录成功",
+                cookie="MUSIC_U=test-cookie;",
+            )
+        ]
+    )
+    plugin = make_plugin(api=api, raw_config=raw_config)
+    event = make_event("/网易云登录")
+
+    await plugin.login_netease_music_command(event)
+
+    assert event.stopped["value"] is True
+    assert api.create_qr_login_calls == 1
+    assert api.check_qr_login_calls == ["test-key"]
+    assert raw_config["music_search"]["cookie"] == "MUSIC_U=test-cookie;"
+    assert raw_config.saved is True
+    assert plugin.music_search_config.cookie == "MUSIC_U=test-cookie;"
+    assert MUSIC_LOGIN_SUCCESS_MESSAGE in event.sent[-1].chain[0].text
+
+
+@pytest.mark.asyncio
+async def test_login_netease_music_command_reports_expired(monkeypatch, tmp_path):
+    async def fast_sleep(_seconds):
+        return None
+
+    monkeypatch.setattr("main.PLUGIN_ROOT", tmp_path)
+    monkeypatch.setattr("main.asyncio.sleep", fast_sleep)
+    raw_config = FakeConfig({"music_search": {}})
+    api = FakeMusicApi(
+        login_statuses=[NeteaseQrLoginStatus(code=800, message="二维码已过期")]
+    )
+    plugin = make_plugin(api=api, raw_config=raw_config)
+    event = make_event("/网易云登录")
+
+    await plugin.login_netease_music_command(event)
+
+    assert "cookie" not in raw_config["music_search"]
+    assert raw_config.saved is False
+    assert MUSIC_LOGIN_EXPIRED_MESSAGE in event.sent[-1].chain[0].text
