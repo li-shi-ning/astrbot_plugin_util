@@ -7,6 +7,7 @@ import traceback
 import uuid
 from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
 
 # ====== 第三方库 ======
 import numpy as np
@@ -47,6 +48,22 @@ try:
         format_love_message,
         load_love_messages,
     )
+    from .core.music_search import (
+        MUSIC_AUDIO_UNAVAILABLE_MESSAGE,
+        MUSIC_DETAIL_ERROR_MESSAGE,
+        MUSIC_SEARCH_API_ERROR_MESSAGE,
+        MUSIC_SEARCH_DISABLED_MESSAGE,
+        MUSIC_SEARCH_EMPTY_MESSAGE,
+        MUSIC_SEARCH_USAGE,
+        MUSIC_SELECTION_EXPIRED_MESSAGE,
+        MUSIC_SELECTION_INVALID_MESSAGE,
+        NeteaseMusicAPI,
+        PendingMusicSelection,
+        build_music_config,
+        format_search_results,
+        format_song_detail,
+        pending_selection_is_expired,
+    )
 except ImportError:
     from core.Filter import register_pack_type
     from core.group_history import (
@@ -65,6 +82,22 @@ except ImportError:
         format_love_message,
         load_love_messages,
     )
+    from core.music_search import (
+        MUSIC_AUDIO_UNAVAILABLE_MESSAGE,
+        MUSIC_DETAIL_ERROR_MESSAGE,
+        MUSIC_SEARCH_API_ERROR_MESSAGE,
+        MUSIC_SEARCH_DISABLED_MESSAGE,
+        MUSIC_SEARCH_EMPTY_MESSAGE,
+        MUSIC_SEARCH_USAGE,
+        MUSIC_SELECTION_EXPIRED_MESSAGE,
+        MUSIC_SELECTION_INVALID_MESSAGE,
+        NeteaseMusicAPI,
+        PendingMusicSelection,
+        build_music_config,
+        format_search_results,
+        format_song_detail,
+        pending_selection_is_expired,
+    )
 
 
 SUPPORTED_KEYWORD_VOICE_SUFFIXES = {
@@ -80,7 +113,7 @@ PLUGIN_ROOT = Path(__file__).resolve().parent
 LOVE_MESSAGES_PATH = (PLUGIN_ROOT / "core" / "love_messages.txt").resolve()
 
 
-@register("util", "lishinig", "私人插件", "1.5.6")
+@register("util", "lishinig", "私人插件", "1.6.0")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -258,6 +291,7 @@ class util(Star):
         debug_config = config_section("debug_logging")
         li_config = config_section("li_handoff")
         group_history_config = config_section("group_history")
+        music_search_config = config_section("music_search")
 
         self.enable_history_chunking_feature = config_value(
             history_config,
@@ -347,6 +381,9 @@ class util(Star):
             "enable_group_history_feature",
             True,
         )
+        self.music_search_config = build_music_config(music_search_config)
+        self.music_pending_selections: dict[str, PendingMusicSelection] = {}
+        self.music_song_cache: dict[str, list[dict]] = {}
         self.group_keyword_voices = load_group_keyword_voices(config)
         self.love_messages = load_love_messages(LOVE_MESSAGES_PATH)
         self._li_takeover_next_turn_keys: set[str] = set()
@@ -523,6 +560,113 @@ class util(Star):
         if isinstance(raw_message, dict) and raw_message.get("self_id"):
             self_ids.add(str(raw_message["self_id"]))
         return self_ids
+
+    @filter.command("点歌", alias={"music", "听歌", "网易云"})
+    async def search_music_command(self, event: AstrMessageEvent, keyword: str = ""):
+        """Search music and wait for a numeric selection."""
+        if not self.music_search_config.enabled:
+            yield event.plain_result(MUSIC_SEARCH_DISABLED_MESSAGE)
+            return
+
+        keyword = str(keyword or "").strip()
+        if not keyword:
+            yield event.plain_result(MUSIC_SEARCH_USAGE)
+            return
+
+        api = self._music_api()
+        try:
+            songs = await api.search_songs(
+                keyword,
+                self.music_search_config.search_limit,
+            )
+        except Exception as exc:
+            logger.warning("[util] 音乐搜索失败: %s", exc)
+            yield event.plain_result(MUSIC_SEARCH_API_ERROR_MESSAGE)
+            return
+
+        if not songs:
+            yield event.plain_result(MUSIC_SEARCH_EMPTY_MESSAGE)
+            return
+
+        session_id = event.get_session_id()
+        cache_key = f"{session_id}:{uuid.uuid4().hex}"
+        self.music_song_cache[cache_key] = songs
+        self.music_pending_selections[session_id] = PendingMusicSelection(
+            cache_key=cache_key,
+            expires_at=asyncio.get_running_loop().time()
+            + self.music_search_config.selection_timeout_seconds,
+        )
+
+        yield event.plain_result(format_search_results(keyword, songs))
+
+    @filter.regex(r"^\d+$", priority=999)
+    async def select_music_command(self, event: AstrMessageEvent):
+        """Handle numeric selection after /点歌."""
+        session_id = event.get_session_id()
+        selection = self.music_pending_selections.get(session_id)
+        if selection is None:
+            return
+
+        if pending_selection_is_expired(
+            selection,
+            now=asyncio.get_running_loop().time(),
+        ):
+            self._remove_music_selection(session_id, selection.cache_key)
+            yield event.plain_result(MUSIC_SELECTION_EXPIRED_MESSAGE)
+            return
+
+        try:
+            selected_index = int(str(event.message_str).strip())
+        except ValueError:
+            return
+
+        songs = self.music_song_cache.get(selection.cache_key, [])
+        if not 1 <= selected_index <= len(songs):
+            yield event.plain_result(MUSIC_SELECTION_INVALID_MESSAGE)
+            return
+
+        event.stop_event()
+        self._remove_music_selection(session_id, selection.cache_key)
+        selected_song = songs[selected_index - 1]
+        song_id = selected_song.get("id")
+
+        api = self._music_api()
+        try:
+            song_detail = await api.get_song_detail(song_id)
+            if not song_detail:
+                yield event.plain_result(MUSIC_DETAIL_ERROR_MESSAGE)
+                return
+            audio_url = await api.get_audio_url(
+                song_id,
+                self.music_search_config.quality,
+                self.music_search_config.cookie,
+            )
+        except Exception as exc:
+            logger.warning("[util] 获取音乐详情失败: %s", exc)
+            yield event.plain_result(MUSIC_DETAIL_ERROR_MESSAGE)
+            return
+
+        if not audio_url:
+            yield event.plain_result(MUSIC_AUDIO_UNAVAILABLE_MESSAGE)
+            return
+
+        detail_text, cover_url, audio_url = format_song_detail(
+            song_detail,
+            audio_url,
+            self.music_search_config.quality,
+        )
+        components: list[Any] = [Comp.Plain(detail_text)]
+        if cover_url:
+            components.append(Comp.Image.fromURL(cover_url))
+        yield event.chain_result(components)
+        yield event.chain_result([Comp.Record.fromURL(audio_url)])
+
+    def _music_api(self) -> NeteaseMusicAPI:
+        return NeteaseMusicAPI(self.music_search_config.api_base_url)
+
+    def _remove_music_selection(self, session_id: str, cache_key: str) -> None:
+        self.music_pending_selections.pop(session_id, None)
+        self.music_song_cache.pop(cache_key, None)
 
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
     @filter.command("群友史")

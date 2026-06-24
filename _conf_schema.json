@@ -55,6 +55,49 @@
       }
     }
   },
+  "music_search": {
+    "description": "音乐搜索与点歌",
+    "type": "object",
+    "hint": "网易云音乐 API 搜索、选择和语音播放相关配置",
+    "items": {
+      "enable_music_search_feature": {
+        "description": "是否启用音乐搜索与点歌功能。关闭后 /点歌 不再搜索歌曲。",
+        "type": "bool",
+        "default": true,
+        "hint": "true / false"
+      },
+      "api_base_url": {
+        "description": "网易云音乐 API 地址。可填写完整地址，也可只填写 host:port。",
+        "type": "string",
+        "default": "http://64.90.12.120:3051",
+        "hint": "http://64.90.12.120:3051"
+      },
+      "quality": {
+        "description": "优先请求的音质。不可用时会自动尝试 exhigh、higher、standard。",
+        "type": "string",
+        "default": "exhigh",
+        "hint": "lossless / exhigh / higher / standard"
+      },
+      "search_limit": {
+        "description": "每次搜索展示的歌曲数量，范围 1-10。",
+        "type": "int",
+        "default": 5,
+        "hint": "5"
+      },
+      "selection_timeout_seconds": {
+        "description": "搜索后等待用户回复编号的秒数，范围 10-600。",
+        "type": "int",
+        "default": 60,
+        "hint": "60"
+      },
+      "cookie": {
+        "description": "可选的网易云 Cookie。需要访问受限歌曲时可配置，留空则不传。",
+        "type": "text",
+        "default": "",
+        "hint": "MUSIC_U=..."
+      }
+    }
+  },
   "history_chunking": {
     "description": "历史消息切割与读取工具",
     "type": "object",
