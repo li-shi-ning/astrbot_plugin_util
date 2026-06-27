@@ -136,7 +136,7 @@ NETEASE_LOGIN_DATA_DIR = (PLUGIN_DATA_DIR / "netease_login").resolve()
 NETEASE_COOKIE_PATH = (NETEASE_LOGIN_DATA_DIR / "cookie.json").resolve()
 
 
-@register("util", "lishinig", "私人插件", "1.6.6")
+@register("util", "lishinig", "私人插件", "1.6.7")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)

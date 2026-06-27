@@ -1,3 +1,8 @@
+# v1.6.7
+
+- 新增网易云音乐 API 服务手动重启文档，记录 `ncm-api` 容器状态检查、重启、健康检查和日志注意事项。
+- README 增加服务器运维文档入口。
+
 # v1.6.6
 
 - 调整网易云扫码登录持久化目录：Cookie 和临时二维码改为保存到 AstrBot 官方插件数据目录 `data/plugin_data/astrbot_plugin_util/netease_login/`。
