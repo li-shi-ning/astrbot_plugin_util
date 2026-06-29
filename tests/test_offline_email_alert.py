@@ -74,9 +74,10 @@ def test_build_offline_email_alert_config_strips_values():
 def test_format_offline_email_content_contains_notice_fields():
     content = format_offline_email_content(OFFLINE_RAW_MESSAGE)
 
-    assert "AstrBot 检测到 QQ 账号下线通知" in content
+    assert "AstrBot detected a bot account offline notice." in content
     assert "self_id: 3513785608" in content
-    assert "你的账号当前登录已失效，请重新登录。" in content
+    assert "notice_type: bot_offline" in content
+    assert "登录已失效" not in content
 
 
 def test_send_qq_email_uses_qq_smtp(monkeypatch):
@@ -142,7 +143,8 @@ async def test_handler_sends_email_when_offline_notice_detected(monkeypatch):
     assert sent[0]["password"] == "auth-code"
     assert sent[0]["receiver"] == "receiver@example.com"
     assert sent[0]["subject"] == OFFLINE_EMAIL_SUBJECT
-    assert "登录已失效" in sent[0]["content"]
+    assert "notice_type: bot_offline" in sent[0]["content"]
+    assert "登录已失效" not in sent[0]["content"]
 
 
 @pytest.mark.asyncio

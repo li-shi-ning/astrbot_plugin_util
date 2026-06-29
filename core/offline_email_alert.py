@@ -9,7 +9,7 @@ from email.mime.text import MIMEText
 from typing import Any
 
 
-OFFLINE_EMAIL_SUBJECT = "AstrBot QQ账号下线通知"
+OFFLINE_EMAIL_SUBJECT = "AstrBot bot account offline alert"
 
 
 @dataclass(frozen=True)
@@ -49,15 +49,15 @@ def is_bot_offline_notice(raw_message: Any) -> bool:
 def format_offline_email_content(raw_message: Mapping[str, Any]) -> str:
     return "\n".join(
         [
-            "AstrBot 检测到 QQ 账号下线通知。",
+            "AstrBot detected a bot account offline notice.",
             "",
             f"self_id: {raw_message.get('self_id', '')}",
             f"user_id: {raw_message.get('user_id', '')}",
-            f"tag: {raw_message.get('tag', '')}",
-            f"message: {raw_message.get('message', '')}",
+            f"post_type: {raw_message.get('post_type', '')}",
+            f"notice_type: {raw_message.get('notice_type', '')}",
             f"time: {raw_message.get('time', '')}",
             "",
-            "请尽快检查 AIOCQHTTP / NapCat 登录状态。",
+            "Please check the AIOCQHTTP / NapCat login status as soon as possible.",
         ]
     )
 
