@@ -1,3 +1,9 @@
+# v1.6.8
+
+- 新增 AIOCQHTTP `bot_offline` 账号下线通知检测。
+- 新增 `offline_email_alert` 配置项，支持通过 QQ 邮箱 SMTP 发送下线告警邮件。
+- 新增账号下线邮件通知测试，覆盖 notice 检测、配置解析、SMTP 调用和插件 handler。
+
 # v1.6.7
 
 - 新增网易云音乐 API 服务手动重启文档，记录 `ncm-api` 容器状态检查、重启、健康检查和日志注意事项。

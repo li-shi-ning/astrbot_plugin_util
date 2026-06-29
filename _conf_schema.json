@@ -98,6 +98,37 @@
       }
     }
   },
+  "offline_email_alert": {
+    "description": "账号下线邮件通知",
+    "type": "object",
+    "hint": "检测到 AIOCQHTTP 账号下线通知时，通过 QQ 邮箱 SMTP 自动发送邮件。",
+    "items": {
+      "enable_offline_email_alert": {
+        "description": "是否启用账号下线邮件通知。关闭后只检测事件，不发送邮件。",
+        "type": "bool",
+        "default": false,
+        "hint": "true / false"
+      },
+      "sender": {
+        "description": "QQ 邮箱发件人地址。",
+        "type": "string",
+        "default": "",
+        "hint": "123456@qq.com"
+      },
+      "QQ_password": {
+        "description": "QQ 邮箱 SMTP 授权码，不是 QQ 登录密码。",
+        "type": "string",
+        "default": "",
+        "hint": "QQ 邮箱 SMTP 授权码"
+      },
+      "receiver": {
+        "description": "告警邮件收件人地址。",
+        "type": "string",
+        "default": "",
+        "hint": "receiver@example.com"
+      }
+    }
+  },
   "history_chunking": {
     "description": "历史消息切割与读取工具",
     "type": "object",

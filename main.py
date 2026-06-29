@@ -75,6 +75,13 @@ try:
         save_persisted_music_cookie,
         save_qr_image,
     )
+    from .core.offline_email_alert import (
+        OFFLINE_EMAIL_SUBJECT,
+        build_offline_email_alert_config,
+        format_offline_email_content,
+        is_bot_offline_notice,
+        send_qq_email_async,
+    )
 except ImportError:
     from core.Filter import register_pack_type
     from core.group_history import (
@@ -118,6 +125,13 @@ except ImportError:
         save_persisted_music_cookie,
         save_qr_image,
     )
+    from core.offline_email_alert import (
+        OFFLINE_EMAIL_SUBJECT,
+        build_offline_email_alert_config,
+        format_offline_email_content,
+        is_bot_offline_notice,
+        send_qq_email_async,
+    )
 
 
 SUPPORTED_KEYWORD_VOICE_SUFFIXES = {
@@ -136,7 +150,7 @@ NETEASE_LOGIN_DATA_DIR = (PLUGIN_DATA_DIR / "netease_login").resolve()
 NETEASE_COOKIE_PATH = (NETEASE_LOGIN_DATA_DIR / "cookie.json").resolve()
 
 
-@register("util", "lishinig", "私人插件", "1.6.7")
+@register("util", "lishinig", "私人插件", "1.6.8")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -315,6 +329,7 @@ class util(Star):
         li_config = config_section("li_handoff")
         group_history_config = config_section("group_history")
         music_search_config = config_section("music_search")
+        offline_email_alert_config = config_section("offline_email_alert")
 
         self.enable_history_chunking_feature = config_value(
             history_config,
@@ -404,6 +419,9 @@ class util(Star):
             "enable_group_history_feature",
             True,
         )
+        self.offline_email_alert_config = build_offline_email_alert_config(
+            offline_email_alert_config
+        )
         self.music_search_config = build_music_config(music_search_config)
         persisted_music_cookie = load_persisted_music_cookie(NETEASE_COOKIE_PATH)
         if persisted_music_cookie:
@@ -417,6 +435,37 @@ class util(Star):
         self.love_messages = load_love_messages(LOVE_MESSAGES_PATH)
         self._li_takeover_next_turn_keys: set[str] = set()
         self._li_reply_capture_futures: dict[str, asyncio.Future[str]] = {}
+
+    @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP, priority=10000)
+    @filter.event_message_type(filter.EventMessageType.ALL, priority=10000)
+    async def notify_bot_offline_email(self, event: AiocqhttpMessageEvent):
+        """Send an email alert when AIOCQHTTP reports that the bot account is offline."""
+        raw_message = getattr(event.message_obj, "raw_message", None)
+        if not is_bot_offline_notice(raw_message):
+            return
+
+        if not self.offline_email_alert_config.enabled:
+            return
+
+        if not self.offline_email_alert_config.is_ready:
+            logger.warning("[util] 账号下线邮件通知配置不完整，已跳过发送。")
+            return
+
+        try:
+            await send_qq_email_async(
+                sender=self.offline_email_alert_config.sender,
+                password=self.offline_email_alert_config.QQ_password,
+                receiver=self.offline_email_alert_config.receiver,
+                subject=OFFLINE_EMAIL_SUBJECT,
+                content=format_offline_email_content(raw_message),
+            )
+            logger.info(
+                "[util] 已发送账号下线邮件通知: self_id=%s user_id=%s",
+                raw_message.get("self_id", ""),
+                raw_message.get("user_id", ""),
+            )
+        except Exception as exc:
+            logger.error("[util] 账号下线邮件通知发送失败: %s", exc)
 
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
     async def handoff_next_ni_turn_to_li(self, event: AiocqhttpMessageEvent):

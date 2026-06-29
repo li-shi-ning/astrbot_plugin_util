@@ -48,6 +48,19 @@ AstrBot 当前配置界面没有目录选择器，因此 `audio_directory` 使�
 
 需要使用 VIP 账号访问会员音乐时，发送 `/网易云登录` 并用网易云音乐 App 扫码确认。登录成功后插件会把接口返回的 Cookie 持久化保存到 AstrBot 插件数据目录 `data/plugin_data/astrbot_plugin_util/netease_login/cookie.json`，重启后会自动读取，后续点歌会自动携带该登录态。`music_search.cookie` 仍可手动填写作为备用配置。Cookie 属于账号凭据，请只在可信环境中使用登录指令。
 
+## 账号下线邮件通知
+
+插件会检测 AIOCQHTTP 上报的 `bot_offline` 下线通知，例如“你的账号当前登录已失效，请重新登录。”。命中后可通过 QQ 邮箱 SMTP 自动发送告警邮件。
+
+在插件配置页的 `offline_email_alert` 中配置：
+
+- `enable_offline_email_alert`：是否启用账号下线邮件通知，默认关闭。
+- `sender`：QQ 邮箱发件人地址。
+- `QQ_password`：QQ 邮箱 SMTP 授权码，不是 QQ 登录密码。
+- `receiver`：告警邮件收件人地址。
+
+当前只负责检测和发邮件。若 AstrBot 会话白名单在插件处理前拦截该 notice，需要后续把对应下线通知会话放入白名单。
+
 ## 群友史
 
 - `/群友史 QQ号 消息内容 | QQ号 消息内容 | ...`：按输入构造合并转发聊天记录。
@@ -65,6 +78,7 @@ AstrBot 当前配置界面没有目录选择器，因此 `audio_directory` 使�
 - 新增 NullDox 风格的 `/土味情话 [QQ号|@用户]` 指令。
 - 新增 `/点歌` 音乐搜索与点歌功能。
 - 新增 `/网易云登录` 扫码登录功能，可自动持久化保存网易云 Cookie。
+- 新增 AIOCQHTTP 账号下线邮件通知功能。
 - 新增 `群友史` 构造聊天记录功能，输出为合并转发节点。
 - 已移除语音生成命令。
 - 已移除骰子指令处理。
