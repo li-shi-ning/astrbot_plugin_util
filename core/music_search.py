@@ -10,7 +10,7 @@ from typing import Any
 
 import aiohttp
 
-DEFAULT_MUSIC_API_BASE_URL = "http://64.90.12.120:3051"
+DEFAULT_MUSIC_API_BASE_URL = ""
 DEFAULT_MUSIC_QUALITY = "exhigh"
 DEFAULT_MUSIC_SEARCH_LIMIT = 5
 DEFAULT_MUSIC_SELECTION_TIMEOUT_SECONDS = 60
@@ -60,9 +60,9 @@ class NeteaseQrLoginStatus:
 
 
 def normalize_api_base_url(value: str | None) -> str:
-    api_base_url = (value or DEFAULT_MUSIC_API_BASE_URL).strip().rstrip("/")
+    api_base_url = (value or "").strip().rstrip("/")
     if not api_base_url:
-        return DEFAULT_MUSIC_API_BASE_URL
+        return ""
     if not api_base_url.startswith(("http://", "https://")):
         api_base_url = f"http://{api_base_url}"
     return api_base_url

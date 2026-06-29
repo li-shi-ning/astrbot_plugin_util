@@ -134,21 +134,22 @@ async def collect(generator):
 def test_build_music_config_normalizes_api_url_and_limits_values():
     config = build_music_config(
         {
-            "api_base_url": "64.90.12.120:3051/",
+            "api_base_url": "music.example/",
             "search_limit": 99,
             "selection_timeout_seconds": 1,
             "quality": "higher",
         }
     )
 
-    assert config.api_base_url == "http://64.90.12.120:3051"
+    assert config.api_base_url == "http://music.example"
     assert config.search_limit == 10
     assert config.selection_timeout_seconds == 10
     assert config.quality == "higher"
 
 
-def test_normalize_api_base_url_uses_default_when_blank():
-    assert normalize_api_base_url("") == DEFAULT_MUSIC_API_BASE_URL
+def test_normalize_api_base_url_returns_blank_when_unconfigured():
+    assert DEFAULT_MUSIC_API_BASE_URL == ""
+    assert normalize_api_base_url("") == ""
 
 
 def test_netease_login_uses_astrbot_plugin_data_dir():
@@ -293,7 +294,7 @@ async def test_login_netease_music_command_persists_cookie(monkeypatch, tmp_path
     monkeypatch.setattr("main.NETEASE_LOGIN_DATA_DIR", tmp_path / "netease_login")
     monkeypatch.setattr("main.NETEASE_COOKIE_PATH", cookie_path)
     monkeypatch.setattr("main.asyncio.sleep", fast_sleep)
-    raw_config = FakeConfig({"music_search": {"api_base_url": "64.90.12.120:3051"}})
+    raw_config = FakeConfig({"music_search": {"api_base_url": "music.example"}})
     api = FakeMusicApi(
         login_statuses=[
             NeteaseQrLoginStatus(

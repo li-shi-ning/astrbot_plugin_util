@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from email import message_from_string
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -110,7 +111,8 @@ def test_send_qq_email_uses_qq_smtp(monkeypatch):
     assert calls[0] == ("connect", "smtp.qq.com", 465)
     assert calls[1] == ("login", "sender@qq.com", "auth-code")
     assert calls[2][0:3] == ("sendmail", "sender@qq.com", "receiver@example.com")
-    assert "offline" in calls[2][3]
+    parsed_message = message_from_string(calls[2][3])
+    assert parsed_message.get_payload(decode=True).decode("utf-8") == "offline"
     assert calls[3] == ("quit",)
 
 
