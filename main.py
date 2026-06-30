@@ -170,7 +170,7 @@ OFFLINE_MAIL_MONITOR_STATE_PATH = (
 ).resolve()
 
 
-@register("util", "lishinig", "私人插件", "1.6.12")
+@register("util", "lishinig", "私人插件", "1.6.13")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)

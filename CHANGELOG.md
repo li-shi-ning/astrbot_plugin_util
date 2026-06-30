@@ -1,3 +1,8 @@
+# v1.6.13
+
+- 新增 `scripts/send_test_email.py` QQ SMTP 测试脚本。
+- 测试脚本支持 `--offline-alert`，可发送命中邮箱下线检测端默认关键词的测试邮件。
+
 # v1.6.12
 
 - 邮箱下线检测端新增 `message_template`，支持为主动提醒配置自定义消息模板。

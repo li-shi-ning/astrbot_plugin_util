@@ -94,6 +94,15 @@ AstrBot 当前配置界面没有目录选择器，因此 `audio_directory` 使�
 
 插件会把每个检测端已处理的最新 UID 保存到 AstrBot 插件数据目录 `data/plugin_data/astrbot_plugin_util/offline_mail_monitor_state.json`。首次启动某条检测端配置时只记录当前邮箱最新 UID，不会推送历史邮件；之后只处理新邮件。
 
+可用测试脚本发送能触发检测端的下线邮件：
+
+```powershell
+cd E:\pythonDma\git\AstrBot\data\plugins\astrbot_plugin_util
+uv run python scripts\send_test_email.py --offline-alert
+```
+
+脚本默认读取 `cs\QQ_mailbox\text.yaml` 中的 `sender`、`QQ_password` 和 `receiver`。
+
 ## 群友史
 
 - `/群友史 QQ号 消息内容 | QQ号 消息内容 | ...`：按输入构造合并转发聊天记录。
