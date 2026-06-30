@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import re
+import sqlite3
+import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 
-DEFAULT_ROLEPLAY_KNOWLEDGE_ROOT = Path("cs") / "output"
 ROLEPLAY_KNOWLEDGE_TOOL_NAME = "search_roleplay_knowledge"
+ROLEPLAY_KNOWLEDGE_DB_FILENAME = "roleplay_knowledge.sqlite3"
+SCHEMA_VERSION = 1
 
 
 @dataclass(frozen=True)
@@ -48,21 +51,78 @@ def load_roleplay_knowledge_config(config: Mapping[str, Any]) -> RoleplayKnowled
 
 
 class RoleplayKnowledgeBase:
-    def __init__(self, documents: list[RoleplayKnowledgeDocument]):
-        self.documents = documents
+    def __init__(self, db_path: Path):
+        self.db_path = Path(db_path)
+        if str(self.db_path) != ":memory:":
+            self.db_path = self.db_path.resolve()
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._ensure_schema()
 
     @classmethod
-    def from_root(cls, root: Path) -> "RoleplayKnowledgeBase":
+    def from_root(
+        cls,
+        root: Path,
+        db_path: Path | None = None,
+    ) -> "RoleplayKnowledgeBase":
+        if db_path is None:
+            db_file = tempfile.NamedTemporaryFile(
+                prefix="astrbot_roleplay_knowledge_",
+                suffix=".sqlite3",
+                delete=False,
+            )
+            db_file.close()
+            db_path = Path(db_file.name)
+        knowledge_base = cls(db_path)
+        knowledge_base.rebuild_from_root(root)
+        return knowledge_base
+
+    def rebuild_from_root(self, root: Path) -> None:
         root = root.resolve()
-        documents: list[RoleplayKnowledgeDocument] = []
-        documents.extend(_load_documents(root, "ema", _ema_roots(root)))
-        documents.extend(_load_documents(root, "hiro", _hiro_roots(root)))
-        return cls(documents)
+        documents = _load_documents(root)
+        with self._connect() as connection:
+            connection.execute("DELETE FROM documents")
+            connection.executemany(
+                """
+                INSERT INTO documents(database, title, source, content)
+                VALUES (?, ?, ?, ?)
+                """,
+                [
+                    (
+                        document.database,
+                        document.title,
+                        document.source,
+                        document.content,
+                    )
+                    for document in documents
+                ],
+            )
+            connection.execute(
+                """
+                INSERT INTO metadata(key, value)
+                VALUES ('schema_version', ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                """,
+                (str(SCHEMA_VERSION),),
+            )
+            connection.execute(
+                """
+                INSERT INTO metadata(key, value)
+                VALUES ('source_root', ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                """,
+                (str(root),),
+            )
 
     def count(self, database: str | None = None) -> int:
-        if database is None:
-            return len(self.documents)
-        return sum(1 for document in self.documents if document.database == database)
+        with self._connect() as connection:
+            if database is None:
+                row = connection.execute("SELECT COUNT(*) FROM documents").fetchone()
+            else:
+                row = connection.execute(
+                    "SELECT COUNT(*) FROM documents WHERE database = ?",
+                    (database,),
+                ).fetchone()
+        return int(row[0]) if row else 0
 
     def search(
         self,
@@ -76,10 +136,18 @@ class RoleplayKnowledgeBase:
             return []
 
         terms = _query_terms(query)
+        sql, parameters = _search_sql(database, terms)
         results: list[RoleplayKnowledgeSearchResult] = []
-        for document in self.documents:
-            if document.database != database:
-                continue
+        with self._connect() as connection:
+            rows = connection.execute(sql, parameters).fetchall()
+
+        for row in rows:
+            document = RoleplayKnowledgeDocument(
+                database=str(row["database"]),
+                title=str(row["title"]),
+                source=str(row["source"]),
+                content=str(row["content"]),
+            )
             score = _score_document(document, terms)
             if score <= 0:
                 continue
@@ -100,6 +168,40 @@ class RoleplayKnowledgeBase:
             reverse=True,
         )
         return results[: max(1, limit)]
+
+    def _ensure_schema(self) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS documents (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    database TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    UNIQUE(database, source)
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_roleplay_documents_database
+                ON documents(database)
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS metadata (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                )
+                """
+            )
+
+    def _connect(self) -> sqlite3.Connection:
+        connection = sqlite3.connect(str(self.db_path))
+        connection.row_factory = sqlite3.Row
+        return connection
 
 
 def select_roleplay_database(platform_id: str | None) -> str:
@@ -137,23 +239,38 @@ def format_roleplay_search_results(
     return "\n".join(lines).strip()
 
 
+def _load_documents(root: Path) -> list[RoleplayKnowledgeDocument]:
+    documents: list[RoleplayKnowledgeDocument] = []
+    documents.extend(_load_documents_for_database(root, "ema", _ema_roots(root)))
+    documents.extend(_load_documents_for_database(root, "hiro", _hiro_roots(root)))
+    return documents
+
+
 def _ema_roots(root: Path) -> tuple[Path, ...]:
-    return (
-        root / "ema-roleplay",
-        root / "艾玛提示词_13份",
-        root / "魔女岛背景名词词典.md",
-    )
+    return _matching_roots(root, directory_prefixes=("ema-roleplay", "艾玛"), include_common=True)
 
 
 def _hiro_roots(root: Path) -> tuple[Path, ...]:
-    return (
-        root / "hiro-roleplay",
-        root / "希罗提示词_13份",
-        root / "魔女岛背景名词词典.md",
-    )
+    return _matching_roots(root, directory_prefixes=("hiro-roleplay", "希罗"), include_common=True)
 
 
-def _load_documents(
+def _matching_roots(
+    root: Path,
+    directory_prefixes: tuple[str, ...],
+    include_common: bool,
+) -> tuple[Path, ...]:
+    paths: list[Path] = []
+    if not root.exists():
+        return ()
+    for path in sorted(root.iterdir(), key=lambda item: item.name):
+        if path.is_dir() and any(path.name.startswith(prefix) for prefix in directory_prefixes):
+            paths.append(path)
+        elif include_common and path.is_file() and path.suffix.lower() == ".md":
+            paths.append(path)
+    return tuple(paths)
+
+
+def _load_documents_for_database(
     root: Path,
     database: str,
     include_roots: tuple[Path, ...],
@@ -169,10 +286,7 @@ def _load_documents(
             if resolved in seen or not resolved.is_file() or path.suffix.lower() != ".md":
                 continue
             seen.add(resolved)
-            try:
-                content = path.read_text(encoding="utf-8")
-            except UnicodeDecodeError:
-                content = path.read_text(encoding="utf-8-sig", errors="replace")
+            content = _read_markdown(path)
             documents.append(
                 RoleplayKnowledgeDocument(
                     database=database,
@@ -182,6 +296,13 @@ def _load_documents(
                 )
             )
     return documents
+
+
+def _read_markdown(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return path.read_text(encoding="utf-8-sig", errors="replace")
 
 
 def _document_title(path: Path, content: str) -> str:
@@ -208,10 +329,24 @@ def _strip_frontmatter(content: str) -> str:
     return content[match.end() :]
 
 
+def _search_sql(database: str, terms: list[str]) -> tuple[str, list[str]]:
+    clauses = ["database = ?"]
+    parameters = [database]
+    for term in terms:
+        clauses.append("(title LIKE ? OR source LIKE ? OR content LIKE ?)")
+        like_term = f"%{term}%"
+        parameters.extend([like_term, like_term, like_term])
+    return (
+        "SELECT database, title, source, content FROM documents WHERE "
+        + " AND ".join(clauses),
+        parameters,
+    )
+
+
 def _query_terms(query: str) -> list[str]:
     normalized = _normalize(query)
     terms = [term for term in re.split(r"\s+", normalized) if term]
-    if normalized and normalized not in terms:
+    if normalized and normalized not in terms and not re.search(r"\s", normalized):
         terms.append(normalized)
     if len(terms) == 1 and len(terms[0]) >= 4:
         compact = terms[0]

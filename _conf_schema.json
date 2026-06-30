@@ -282,7 +282,7 @@
   "roleplay_knowledge": {
     "description": "角色资料库搜索工具",
     "type": "object",
-    "hint": "把 cs/output 中的艾玛与希罗角色资料作为本地资料库，向大模型提供搜索工具。配置文件名称为 ni 时使用艾玛资料库，其他默认使用希罗资料库。",
+    "hint": "把 cs/output 中的艾玛与希罗角色资料构建为 SQLite 本地资料库，向大模型提供搜索工具。数据库保存到 AstrBot 插件数据目录 astrbot_plugin_util/roleplay_knowledge/roleplay_knowledge.sqlite3。配置文件名称为 ni 时使用艾玛资料库，其他默认使用希罗资料库。",
     "items": {
       "enable_roleplay_knowledge_tool": {
         "description": "是否向大模型暴露角色资料库搜索工具",

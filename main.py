@@ -99,6 +99,7 @@ try:
     from .core.roleplay_knowledge import (
         ROLEPLAY_KNOWLEDGE_TOOL_NAME,
         RoleplayKnowledgeBase,
+        ROLEPLAY_KNOWLEDGE_DB_FILENAME,
         format_roleplay_search_results,
         load_roleplay_knowledge_config,
         select_roleplay_database,
@@ -169,6 +170,7 @@ except ImportError:
     from core.roleplay_knowledge import (
         ROLEPLAY_KNOWLEDGE_TOOL_NAME,
         RoleplayKnowledgeBase,
+        ROLEPLAY_KNOWLEDGE_DB_FILENAME,
         format_roleplay_search_results,
         load_roleplay_knowledge_config,
         select_roleplay_database,
@@ -190,7 +192,11 @@ PLUGIN_DATA_DIR = (Path(get_astrbot_plugin_data_path()) / "astrbot_plugin_util")
 NETEASE_LOGIN_DATA_DIR = (PLUGIN_DATA_DIR / "netease_login").resolve()
 NETEASE_COOKIE_PATH = (NETEASE_LOGIN_DATA_DIR / "cookie.json").resolve()
 ROLEPLAY_KNOWLEDGE_ROOT = (PLUGIN_ROOT / "cs" / "output").resolve()
-@register("util", "lishinig", "私人插件", "1.6.18")
+ROLEPLAY_KNOWLEDGE_DATA_DIR = (PLUGIN_DATA_DIR / "roleplay_knowledge").resolve()
+ROLEPLAY_KNOWLEDGE_DB_PATH = (
+    ROLEPLAY_KNOWLEDGE_DATA_DIR / ROLEPLAY_KNOWLEDGE_DB_FILENAME
+).resolve()
+@register("util", "lishinig", "私人插件", "1.6.19")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -464,7 +470,8 @@ class util(Star):
             roleplay_knowledge_config
         )
         self.roleplay_knowledge_base = RoleplayKnowledgeBase.from_root(
-            ROLEPLAY_KNOWLEDGE_ROOT
+            ROLEPLAY_KNOWLEDGE_ROOT,
+            ROLEPLAY_KNOWLEDGE_DB_PATH,
         )
         self.offline_email_alert_config = build_offline_email_alert_config(
             offline_email_alert_config

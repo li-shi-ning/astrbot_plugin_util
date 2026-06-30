@@ -89,7 +89,14 @@ AstrBot 当前配置界面没有目录选择器，因此 `audio_directory` 使�
 
 ## 角色资料库搜索工具
 
-插件会把 `cs/output` 中的角色扮演资料整理为本地资料库，并提供给大模型工具 `search_roleplay_knowledge` 搜索使用。
+插件会把 `cs/output` 中的角色扮演资料构建为 SQLite 本地资料库，并提供给大模型工具 `search_roleplay_knowledge` 搜索使用。
+
+数据位置：
+
+- 源资料：插件目录下的 `cs/output`。
+- SQLite 数据库：AstrBot 插件数据目录下的 `astrbot_plugin_util/roleplay_knowledge/roleplay_knowledge.sqlite3`。
+
+插件启动时会从 `cs/output` 重建数据库，方便你直接修改 markdown 源资料后重启生效。
 
 在插件配置页的 `roleplay_knowledge` 中配置：
 
