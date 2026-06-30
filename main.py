@@ -5,6 +5,7 @@ import random
 import re
 import traceback
 import uuid
+from collections import deque
 from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
@@ -196,7 +197,7 @@ ROLEPLAY_KNOWLEDGE_DB_RELATIVE_PATH = (
     Path("roleplay_knowledge") / ROLEPLAY_KNOWLEDGE_DB_FILENAME
 )
 ROLEPLAY_KNOWLEDGE_DB_PATH = ROLEPLAY_KNOWLEDGE_DB_RELATIVE_PATH
-@register("util", "lishinig", "私人插件", "1.6.20")
+@register("util", "lishinig", "私人插件", "1.6.21")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -474,6 +475,10 @@ class util(Star):
             ROLEPLAY_KNOWLEDGE_DB_RELATIVE_PATH,
             base_dir=PLUGIN_ROOT,
         )
+        self._roleplay_knowledge_turn_index = 0
+        self._roleplay_knowledge_recent_sources: dict[
+            str, deque[tuple[int, str]]
+        ] = {}
         self.offline_email_alert_config = build_offline_email_alert_config(
             offline_email_alert_config
         )
@@ -1427,6 +1432,8 @@ class util(Star):
         event: AstrMessageEvent,
         req: ProviderRequest,
     ):
+        self._advance_roleplay_knowledge_turn(event)
+
         if self.remove_history_read_tool_before_llm:
             self._remove_history_read_tool_from_request(req)
 
@@ -1932,10 +1939,12 @@ class util(Star):
         query: str,
         limit: int = 0,
     ) -> str:
-        """Search local roleplay knowledge documents for the current bot persona.
+        """Search the local roleplay knowledge database for the current bot persona.
+
+        Candidate keywords include all 13 main cast members: 樱羽艾玛, 二阶堂希罗, 紫藤亚里沙, 夏目安安, 城崎诺亚, 莲见蕾雅, 佐伯米莉亚, 宝生玛格, 黑部奈叶香, 橘雪莉, 远野汉娜, 泽渡可可, 冰上梅露露. You can also search aliases, relationships, tone, behavior, and setting terms.
 
         Args:
-            query(string): Keywords to search, such as a character name, alias, relationship, tone, or setting term.
+            query(string): Keywords to search, such as a character name, alias, relationship, tone, behavior, or setting term.
             limit(number): Optional maximum number of matching documents to return. Use 0 to follow plugin config.
         """
         if not self.roleplay_knowledge_config.enabled:
@@ -1946,13 +1955,76 @@ class util(Star):
             1,
             min(int(limit or self.roleplay_knowledge_config.max_results), 10),
         )
+        scope_key = self._roleplay_knowledge_scope_key(event, database)
+        excluded_sources = self._recent_roleplay_knowledge_sources(scope_key)
         results = self.roleplay_knowledge_base.search(
             database=database,
             query=query,
             limit=safe_limit,
             max_chars_per_result=self.roleplay_knowledge_config.max_chars_per_result,
+            exclude_sources=excluded_sources,
         )
+        self._record_roleplay_knowledge_sources(scope_key, results)
         return format_roleplay_search_results(database, query, results)
+
+    def _advance_roleplay_knowledge_turn(self, event: AstrMessageEvent) -> None:
+        if not hasattr(self, "_roleplay_knowledge_turn_index"):
+            self._roleplay_knowledge_turn_index = 0
+        if not hasattr(self, "_roleplay_knowledge_recent_sources"):
+            self._roleplay_knowledge_recent_sources = {}
+        self._roleplay_knowledge_turn_index += 1
+        keep_turns = getattr(self.roleplay_knowledge_config, "deduplicate_turns", 0)
+        if keep_turns <= 0:
+            self._roleplay_knowledge_recent_sources.clear()
+            return
+
+        min_turn = self._roleplay_knowledge_turn_index - keep_turns
+        for scope_key in list(self._roleplay_knowledge_recent_sources):
+            recent_sources = self._roleplay_knowledge_recent_sources[scope_key]
+            while recent_sources and recent_sources[0][0] <= min_turn:
+                recent_sources.popleft()
+            if not recent_sources:
+                self._roleplay_knowledge_recent_sources.pop(scope_key, None)
+
+    def _roleplay_knowledge_scope_key(
+        self,
+        event: AstrMessageEvent,
+        database: str,
+    ) -> str:
+        return f"{self._request_scope_cache_key(event)}:{database}"
+
+    def _recent_roleplay_knowledge_sources(self, scope_key: str) -> set[str]:
+        if getattr(self.roleplay_knowledge_config, "deduplicate_turns", 0) <= 0:
+            return set()
+        if not hasattr(self, "_roleplay_knowledge_recent_sources"):
+            self._roleplay_knowledge_recent_sources = {}
+        return {
+            source
+            for _, source in self._roleplay_knowledge_recent_sources.get(scope_key, ())
+        }
+
+    def _record_roleplay_knowledge_sources(
+        self,
+        scope_key: str,
+        results,
+    ) -> None:
+        if getattr(self.roleplay_knowledge_config, "deduplicate_turns", 0) <= 0:
+            return
+        if not hasattr(self, "_roleplay_knowledge_turn_index"):
+            self._roleplay_knowledge_turn_index = 0
+        if not hasattr(self, "_roleplay_knowledge_recent_sources"):
+            self._roleplay_knowledge_recent_sources = {}
+        recent_sources = self._roleplay_knowledge_recent_sources.setdefault(
+            scope_key,
+            deque(),
+        )
+        known_sources = {source for _, source in recent_sources}
+        for result in results:
+            source = result.document.source
+            if source in known_sources:
+                continue
+            recent_sources.append((self._roleplay_knowledge_turn_index, source))
+            known_sources.add(source)
 
     @filter.on_decorating_result()
     async def split_llm_result_before_send(self, event: AstrMessageEvent):
@@ -2235,7 +2307,7 @@ class util(Star):
         return False
 
     def _request_scope_cache_key(self, event: AstrMessageEvent) -> str:
-        return str(event.unified_msg_origin)
+        return str(getattr(event, "unified_msg_origin", "unknown"))
 
     def _chunked_history_tool_hint(self) -> str:
         return (

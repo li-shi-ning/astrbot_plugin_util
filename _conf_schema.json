@@ -282,7 +282,7 @@
   "roleplay_knowledge": {
     "description": "角色资料库搜索工具",
     "type": "object",
-    "hint": "把 cs/output 中的艾玛与希罗角色资料构建为 SQLite 本地资料库，向大模型提供搜索工具。数据库保存到插件目录 roleplay_knowledge/roleplay_knowledge.sqlite3，并纳入 git 管理。配置文件名称为 ni 时使用艾玛资料库，其他默认使用希罗资料库。",
+    "hint": "把 cs/output 中的艾玛与希罗角色资料构建为 SQLite 本地资料库，向大模型提供搜索工具。每个资料库包含 12 份他人资料和 1 份公共资料，不包含自身设定。数据库保存到插件目录 roleplay_knowledge/roleplay_knowledge.sqlite3，并纳入 git 管理。配置文件名称为 ni 时使用艾玛资料库，其他默认使用希罗资料库。",
     "items": {
       "enable_roleplay_knowledge_tool": {
         "description": "是否向大模型暴露角色资料库搜索工具",
@@ -301,6 +301,12 @@
         "type": "int",
         "default": 900,
         "hint": "200-4000"
+      },
+      "deduplicate_turns": {
+        "description": "最近多少轮对话内不重复返回同一份资料文档",
+        "type": "int",
+        "default": 5,
+        "hint": "0-50，0 表示关闭去重"
       }
     }
   },

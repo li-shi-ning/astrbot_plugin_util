@@ -1,3 +1,9 @@
+# v1.6.21
+
+- 重构角色资料库入库规则：艾玛与希罗各保留 12 份“对他人认知”资料和 1 份公共背景词典，移除自身设定资料。
+- `search_roleplay_knowledge` 工具说明补充 13 名主要角色关键词，方便模型在不知道具体资料文件名时检索。
+- 新增 `roleplay_knowledge.deduplicate_turns`，最近 N 轮对话内不会重复返回同一份资料文档。
+
 # v1.6.20
 
 - 将角色资料库 SQLite 文件移动到插件目录 `roleplay_knowledge/roleplay_knowledge.sqlite3`，使数据库文件可被 git 管理。

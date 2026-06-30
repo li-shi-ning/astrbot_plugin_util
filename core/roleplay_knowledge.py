@@ -12,6 +12,8 @@ from typing import Any
 ROLEPLAY_KNOWLEDGE_TOOL_NAME = "search_roleplay_knowledge"
 ROLEPLAY_KNOWLEDGE_DB_FILENAME = "roleplay_knowledge.sqlite3"
 SCHEMA_VERSION = 1
+EMA_PROMPT_PREFIX = "\u827e\u739b"
+HIRO_PROMPT_PREFIX = "\u5e0c\u7f57"
 
 
 @dataclass(frozen=True)
@@ -19,6 +21,7 @@ class RoleplayKnowledgeConfig:
     enabled: bool = False
     max_results: int = 4
     max_chars_per_result: int = 900
+    deduplicate_turns: int = 5
 
 
 @dataclass(frozen=True)
@@ -46,6 +49,10 @@ def load_roleplay_knowledge_config(config: Mapping[str, Any]) -> RoleplayKnowled
         max_chars_per_result=max(
             200,
             min(4000, int(section.get("max_chars_per_result", 900) or 900)),
+        ),
+        deduplicate_turns=max(
+            0,
+            min(50, int(section.get("deduplicate_turns", 5) or 0)),
         ),
     )
 
@@ -133,6 +140,7 @@ class RoleplayKnowledgeBase:
         query: str,
         limit: int,
         max_chars_per_result: int,
+        exclude_sources: set[str] | None = None,
     ) -> list[RoleplayKnowledgeSearchResult]:
         query = str(query or "").strip()
         if not query:
@@ -145,10 +153,13 @@ class RoleplayKnowledgeBase:
             rows = connection.execute(sql, parameters).fetchall()
 
         for row in rows:
+            source = str(row["source"])
+            if exclude_sources and source in exclude_sources:
+                continue
             document = RoleplayKnowledgeDocument(
                 database=str(row["database"]),
                 title=str(row["title"]),
-                source=str(row["source"]),
+                source=source,
                 content=str(row["content"]),
             )
             score = _score_document(document, terms)
@@ -250,23 +261,23 @@ def _load_documents(root: Path) -> list[RoleplayKnowledgeDocument]:
 
 
 def _ema_roots(root: Path) -> tuple[Path, ...]:
-    return _matching_roots(root, directory_prefixes=("ema-roleplay", "艾玛"), include_common=True)
+    return _matching_roots(root, directory_prefix=EMA_PROMPT_PREFIX, include_common=True)
 
 
 def _hiro_roots(root: Path) -> tuple[Path, ...]:
-    return _matching_roots(root, directory_prefixes=("hiro-roleplay", "希罗"), include_common=True)
+    return _matching_roots(root, directory_prefix=HIRO_PROMPT_PREFIX, include_common=True)
 
 
 def _matching_roots(
     root: Path,
-    directory_prefixes: tuple[str, ...],
+    directory_prefix: str,
     include_common: bool,
 ) -> tuple[Path, ...]:
     paths: list[Path] = []
     if not root.exists():
         return ()
     for path in sorted(root.iterdir(), key=lambda item: item.name):
-        if path.is_dir() and any(path.name.startswith(prefix) for prefix in directory_prefixes):
+        if path.is_dir() and path.name.startswith(directory_prefix):
             paths.append(path)
         elif include_common and path.is_file() and path.suffix.lower() == ".md":
             paths.append(path)
@@ -287,6 +298,8 @@ def _load_documents_for_database(
         for path in paths:
             resolved = path.resolve()
             if resolved in seen or not resolved.is_file() or path.suffix.lower() != ".md":
+                continue
+            if include_root.is_dir() and path.name.startswith("01_"):
                 continue
             seen.add(resolved)
             content = _read_markdown(path)

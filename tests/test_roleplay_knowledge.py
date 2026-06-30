@@ -36,6 +36,7 @@ def test_roleplay_knowledge_config_bounds_values():
                 "enable_roleplay_knowledge_tool": True,
                 "max_results": 99,
                 "max_chars_per_result": 50,
+                "deduplicate_turns": 99,
             }
         }
     )
@@ -43,6 +44,7 @@ def test_roleplay_knowledge_config_bounds_values():
     assert config.enabled is True
     assert config.max_results == 10
     assert config.max_chars_per_result == 200
+    assert config.deduplicate_turns == 50
 
 
 def test_roleplay_knowledge_selects_database_by_platform_id():
@@ -71,8 +73,16 @@ def test_roleplay_knowledge_builds_sqlite_database(tmp_path):
             "SELECT COUNT(*) FROM documents WHERE database = 'hiro'"
         ).fetchone()[0]
 
-    assert ema_count > 0
-    assert hiro_count > 0
+    assert ema_count == 13
+    assert hiro_count == 13
+    with sqlite3.connect(resolved_db_path) as connection:
+        self_docs = connection.execute(
+            """
+            SELECT COUNT(*) FROM documents
+            WHERE source LIKE '%/01_%'
+            """
+        ).fetchone()[0]
+    assert self_docs == 0
 
 
 def test_roleplay_knowledge_searches_split_databases(tmp_path):
@@ -81,11 +91,11 @@ def test_roleplay_knowledge_searches_split_databases(tmp_path):
         tmp_path / "roleplay_knowledge.sqlite3",
     )
 
-    ema_results = knowledge_base.search("ema", "小笨狗", limit=3, max_chars_per_result=500)
-    hiro_results = knowledge_base.search("hiro", "希罗 正确", limit=3, max_chars_per_result=500)
+    ema_results = knowledge_base.search("ema", "紫藤亚里沙", limit=3, max_chars_per_result=500)
+    hiro_results = knowledge_base.search("hiro", "樱羽艾玛", limit=3, max_chars_per_result=500)
 
-    assert knowledge_base.count("ema") > 0
-    assert knowledge_base.count("hiro") > 0
+    assert knowledge_base.count("ema") == 13
+    assert knowledge_base.count("hiro") == 13
     assert ema_results
     assert all(result.document.database == "ema" for result in ema_results)
     assert hiro_results
@@ -101,6 +111,7 @@ async def test_roleplay_knowledge_tool_uses_ema_for_ni(tmp_path):
                 "enable_roleplay_knowledge_tool": True,
                 "max_results": 2,
                 "max_chars_per_result": 400,
+                "deduplicate_turns": 5,
             }
         }
     )
@@ -108,12 +119,48 @@ async def test_roleplay_knowledge_tool_uses_ema_for_ni(tmp_path):
         ROLEPLAY_KNOWLEDGE_ROOT,
         tmp_path / "roleplay_knowledge.sqlite3",
     )
-    event = SimpleNamespace(get_platform_id=lambda: "ni")
+    event = SimpleNamespace(
+        get_platform_id=lambda: "ni",
+        unified_msg_origin="aiocqhttp:GroupMessage:10001",
+    )
 
     result = await plugin.search_roleplay_knowledge(event, "艾玛", 2)
 
     assert "roleplay_database: ema" in result
     assert "matches:" in result
+
+
+@pytest.mark.asyncio
+async def test_roleplay_knowledge_tool_deduplicates_recent_documents(tmp_path):
+    plugin = util.__new__(util)
+    plugin.roleplay_knowledge_config = load_roleplay_knowledge_config(
+        {
+            "roleplay_knowledge": {
+                "enable_roleplay_knowledge_tool": True,
+                "max_results": 1,
+                "max_chars_per_result": 300,
+                "deduplicate_turns": 3,
+            }
+        }
+    )
+    plugin.roleplay_knowledge_base = RoleplayKnowledgeBase.from_root(
+        ROLEPLAY_KNOWLEDGE_ROOT,
+        tmp_path / "roleplay_knowledge.sqlite3",
+    )
+    plugin._roleplay_knowledge_turn_index = 1
+    plugin._roleplay_knowledge_recent_sources = {}
+    event = SimpleNamespace(
+        get_platform_id=lambda: "ni",
+        unified_msg_origin="aiocqhttp:GroupMessage:10001",
+    )
+
+    first = await plugin.search_roleplay_knowledge(event, "艾玛", 1)
+    first_source = next(line for line in first.splitlines() if line.startswith("source: "))
+    plugin._advance_roleplay_knowledge_turn(event)
+    second = await plugin.search_roleplay_knowledge(event, "艾玛", 1)
+    second_source = next(line for line in second.splitlines() if line.startswith("source: "))
+
+    assert first_source != second_source
 
 
 def test_roleplay_knowledge_db_path_is_plugin_relative():
@@ -135,7 +182,10 @@ async def test_roleplay_knowledge_tool_is_removed_when_disabled():
     plugin.is_debug = False
     plugin.remove_history_read_tool_before_llm = False
     plugin.enable_let_li_speak_tool = False
-    plugin.roleplay_knowledge_config = SimpleNamespace(enabled=False)
+    plugin.roleplay_knowledge_config = SimpleNamespace(
+        enabled=False,
+        deduplicate_turns=0,
+    )
     plugin.enable_history_chunking_feature = False
     plugin._scoped_request_history_cache = {}
     req = SimpleNamespace(
