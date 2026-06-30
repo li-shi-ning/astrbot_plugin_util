@@ -12,6 +12,7 @@ from typing import Any
 
 # ====== 第三方库 ======
 import numpy as np
+from aiohttp import web
 
 import astrbot.api.message_components as Comp
 from astrbot.api import logger
@@ -82,6 +83,19 @@ try:
         is_bot_offline_notice,
         send_qq_email_async,
     )
+    from .core.offline_webhook_alert import (
+        OFFLINE_WEBHOOK_EVENT,
+        SIGNATURE_HEADER,
+        TIMESTAMP_HEADER,
+        build_offline_webhook_payload,
+        format_offline_webhook_message,
+        load_offline_webhook_receive_rules,
+        load_offline_webhook_receiver_server,
+        load_offline_webhook_senders,
+        parse_webhook_payload,
+        send_offline_webhook,
+        verify_webhook_signature,
+    )
 except ImportError:
     from core.Filter import register_pack_type
     from core.group_history import (
@@ -132,6 +146,19 @@ except ImportError:
         is_bot_offline_notice,
         send_qq_email_async,
     )
+    from core.offline_webhook_alert import (
+        OFFLINE_WEBHOOK_EVENT,
+        SIGNATURE_HEADER,
+        TIMESTAMP_HEADER,
+        build_offline_webhook_payload,
+        format_offline_webhook_message,
+        load_offline_webhook_receive_rules,
+        load_offline_webhook_receiver_server,
+        load_offline_webhook_senders,
+        parse_webhook_payload,
+        send_offline_webhook,
+        verify_webhook_signature,
+    )
 
 
 SUPPORTED_KEYWORD_VOICE_SUFFIXES = {
@@ -148,7 +175,7 @@ LOVE_MESSAGES_PATH = (PLUGIN_ROOT / "core" / "love_messages.txt").resolve()
 PLUGIN_DATA_DIR = (Path(get_astrbot_plugin_data_path()) / "astrbot_plugin_util").resolve()
 NETEASE_LOGIN_DATA_DIR = (PLUGIN_DATA_DIR / "netease_login").resolve()
 NETEASE_COOKIE_PATH = (NETEASE_LOGIN_DATA_DIR / "cookie.json").resolve()
-@register("util", "lishinig", "私人插件", "1.6.16")
+@register("util", "lishinig", "私人插件", "1.6.17")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -420,6 +447,12 @@ class util(Star):
         self.offline_email_alert_config = build_offline_email_alert_config(
             offline_email_alert_config
         )
+        self.offline_webhook_senders = load_offline_webhook_senders(config)
+        self.offline_webhook_receiver_server = load_offline_webhook_receiver_server(
+            config
+        )
+        self.offline_webhook_receive_rules = load_offline_webhook_receive_rules(config)
+        self._offline_webhook_runner: web.AppRunner | None = None
         self.music_search_config = build_music_config(music_search_config)
         persisted_music_cookie = load_persisted_music_cookie(NETEASE_COOKIE_PATH)
         if persisted_music_cookie:
@@ -434,6 +467,135 @@ class util(Star):
         self._li_takeover_next_turn_keys: set[str] = set()
         self._li_reply_capture_futures: dict[str, asyncio.Future[str]] = {}
 
+    async def initialize(self) -> None:
+        await self._start_offline_webhook_receiver()
+
+    async def terminate(self) -> None:
+        await self._stop_offline_webhook_receiver()
+
+    async def _start_offline_webhook_receiver(self) -> None:
+        settings = self.offline_webhook_receiver_server
+        if not settings.enabled:
+            return
+
+        ready_rules = [
+            rule
+            for rule in self.offline_webhook_receive_rules
+            if rule.enabled and rule.is_ready
+        ]
+        if not ready_rules:
+            logger.warning("[util] 离线 webhook 接收端已开启，但没有可用接收规则。")
+            return
+
+        app = web.Application()
+        app.router.add_post(settings.path, self._handle_offline_webhook_request)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, settings.listen_host, settings.listen_port)
+        await site.start()
+        self._offline_webhook_runner = runner
+        logger.info(
+            "[util] 离线 webhook 接收端已启动: http://%s:%s%s rules=%s",
+            settings.listen_host,
+            settings.listen_port,
+            settings.path,
+            len(ready_rules),
+        )
+
+    async def _stop_offline_webhook_receiver(self) -> None:
+        if self._offline_webhook_runner is None:
+            return
+        await self._offline_webhook_runner.cleanup()
+        self._offline_webhook_runner = None
+        logger.info("[util] 离线 webhook 接收端已停止。")
+
+    async def _handle_offline_webhook_request(self, request: web.Request) -> web.Response:
+        body = await request.read()
+        timestamp = request.headers.get(TIMESTAMP_HEADER, "")
+        signature = request.headers.get(SIGNATURE_HEADER, "")
+        matched_rules = [
+            rule
+            for rule in self.offline_webhook_receive_rules
+            if rule.enabled
+            and rule.is_ready
+            and verify_webhook_signature(
+                secret=rule.secret,
+                body=body,
+                timestamp=timestamp,
+                signature=signature,
+            )
+        ]
+        if not matched_rules:
+            logger.warning("[util] 离线 webhook 接收端拒绝请求：签名无效。")
+            return web.json_response({"ok": False, "error": "invalid signature"}, status=401)
+
+        try:
+            payload = parse_webhook_payload(body)
+        except Exception:
+            logger.warning("[util] 离线 webhook 接收端拒绝请求：JSON 无效。")
+            return web.json_response({"ok": False, "error": "invalid json"}, status=400)
+
+        if payload.get("event") != OFFLINE_WEBHOOK_EVENT:
+            return web.json_response({"ok": True, "ignored": True})
+
+        sent_count = 0
+        for rule in matched_rules:
+            message = format_offline_webhook_message(payload, rule)
+            components = self._build_offline_webhook_components(
+                message,
+                rule.at_targets,
+            )
+            try:
+                sent = await self.context.send_message(
+                    rule.target_session,
+                    MessageChain(components),
+                )
+            except Exception as exc:
+                logger.error(
+                    "[util] 离线 webhook 接收端主动发送失败: rule=%s target=%s error=%s",
+                    rule.name,
+                    rule.target_session,
+                    exc,
+                    exc_info=True,
+                )
+                continue
+            if sent:
+                sent_count += 1
+                logger.info(
+                    "[util] 离线 webhook 接收端已发送提醒: rule=%s target=%s self_id=%s",
+                    rule.name,
+                    rule.target_session,
+                    payload.get("self_id", ""),
+                )
+            else:
+                logger.warning(
+                    "[util] 离线 webhook 接收端未找到目标机器人: rule=%s target=%s",
+                    rule.name,
+                    rule.target_session,
+                )
+
+        return web.json_response({"ok": True, "matched": len(matched_rules), "sent": sent_count})
+
+    @staticmethod
+    def _build_offline_webhook_components(
+        message: str,
+        at_targets: tuple[str, ...],
+    ) -> list:
+        components = []
+        for target in at_targets:
+            normalized_target = str(target).strip()
+            if not normalized_target:
+                continue
+            if normalized_target.lower() == "all":
+                components.append(Comp.AtAll())
+            else:
+                components.append(Comp.At(qq=normalized_target))
+        if components:
+            components.append(Comp.Plain("\n" + message))
+        else:
+            components.append(Comp.Plain(message))
+        return components
+
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP, priority=10000)
     @filter.event_message_type(filter.EventMessageType.ALL, priority=10000)
     async def notify_bot_offline_email(self, event: AiocqhttpMessageEvent):
@@ -442,28 +604,56 @@ class util(Star):
         if not is_bot_offline_notice(raw_message):
             return
 
-        if not self.offline_email_alert_config.enabled:
+        if self.offline_email_alert_config.enabled:
+            if not self.offline_email_alert_config.is_ready:
+                logger.warning("[util] 账号下线邮件通知配置不完整，已跳过发送。")
+            else:
+                try:
+                    await send_qq_email_async(
+                        sender=self.offline_email_alert_config.sender,
+                        password=self.offline_email_alert_config.QQ_password,
+                        receiver=self.offline_email_alert_config.receiver,
+                        subject=OFFLINE_EMAIL_SUBJECT,
+                        content=format_offline_email_content(raw_message),
+                    )
+                    logger.info(
+                        "[util] 已发送账号下线邮件通知: self_id=%s user_id=%s",
+                        raw_message.get("self_id", ""),
+                        raw_message.get("user_id", ""),
+                    )
+                except Exception as exc:
+                    logger.error("[util] 账号下线邮件通知发送失败: %s", exc)
+
+        await self._send_offline_webhook_alerts(raw_message)
+
+    async def _send_offline_webhook_alerts(self, raw_message: Mapping[str, Any]) -> None:
+        senders = [
+            sender
+            for sender in getattr(self, "offline_webhook_senders", [])
+            if sender.enabled and sender.is_ready
+        ]
+        if not senders:
             return
 
-        if not self.offline_email_alert_config.is_ready:
-            logger.warning("[util] 账号下线邮件通知配置不完整，已跳过发送。")
-            return
-
-        try:
-            await send_qq_email_async(
-                sender=self.offline_email_alert_config.sender,
-                password=self.offline_email_alert_config.QQ_password,
-                receiver=self.offline_email_alert_config.receiver,
-                subject=OFFLINE_EMAIL_SUBJECT,
-                content=format_offline_email_content(raw_message),
-            )
+        payload = build_offline_webhook_payload(raw_message)
+        for sender in senders:
+            try:
+                await send_offline_webhook(sender, payload)
+            except Exception as exc:
+                logger.error(
+                    "[util] 离线 webhook 推送失败: sender=%s url=%s error=%s",
+                    sender.name,
+                    sender.webhook_url,
+                    exc,
+                    exc_info=True,
+                )
+                continue
             logger.info(
-                "[util] 已发送账号下线邮件通知: self_id=%s user_id=%s",
-                raw_message.get("self_id", ""),
-                raw_message.get("user_id", ""),
+                "[util] 已推送离线 webhook: sender=%s url=%s self_id=%s",
+                sender.name,
+                sender.webhook_url,
+                payload.get("self_id", ""),
             )
-        except Exception as exc:
-            logger.error("[util] 账号下线邮件通知发送失败: %s", exc)
 
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
     async def handoff_next_ni_turn_to_li(self, event: AiocqhttpMessageEvent):

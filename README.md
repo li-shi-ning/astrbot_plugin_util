@@ -61,6 +61,32 @@ AstrBot 当前配置界面没有目录选择器，因此 `audio_directory` 使�
 
 当前只负责检测和发邮件。若 AstrBot 会话白名单在插件处理前拦截该 notice，需要后续把对应下线通知会话放入白名单。
 
+## 下线 Webhook 发送端与接收端
+
+插件内置下线 Webhook 发送端和接收端，二者可以独立开关。发送端在检测到 AIOCQHTTP `bot_offline` notice 后推送签名 JSON；接收端收到合法签名后，按接收规则向指定机器人会话主动发送提醒。
+
+发送端配置 `offline_webhook_senders`，支持多条目标：
+
+- `enabled`：启用本发送目标。
+- `webhook_url`：接收端地址，例如 `http://127.0.0.1:8765/astrbot-util/offline`。
+- `secret`：共享密钥，发送端和接收规则必须一致。
+- `timeout_seconds` / `retry_count`：请求超时和失败重试次数。
+
+接收端服务配置 `offline_webhook_receiver`：
+
+- `enable_offline_webhook_receiver`：启用 HTTP 接收服务。
+- `listen_host` / `listen_port`：监听地址和端口。
+- `path`：接收路径，默认 `/astrbot-util/offline`。
+
+接收规则配置 `offline_webhook_receive_rules`，支持多条规则：
+
+- `secret`：用于校验发送端 HMAC-SHA256 签名。
+- `platform_id` / `message_type` / `session_id`：主动发送提醒的目标会话。
+- `message_template`：提醒消息模板。
+- `at_targets`：可填写 QQ 号或 `all`，在提醒前追加 @。
+
+模板变量：`{event}`、`{self_id}`、`{user_id}`、`{platform}`、`{message}`、`{notice_type}`、`{post_type}`、`{source_time}`、`{timestamp}`、`{rule}`、`{session}`。
+
 ## 群友史
 
 - `/群友史 QQ号 消息内容 | QQ号 消息内容 | ...`：按输入构造合并转发聊天记录。
@@ -79,6 +105,7 @@ AstrBot 当前配置界面没有目录选择器，因此 `audio_directory` 使�
 - 新增 `/点歌` 音乐搜索与点歌功能。
 - 新增 `/网易云登录` 扫码登录功能，可自动持久化保存网易云 Cookie。
 - 新增 AIOCQHTTP 账号下线邮件通知功能。
+- 新增下线 Webhook 发送端与接收端，可在多个 AstrBot 实例之间推送下线提醒。
 - 新增 `群友史` 构造聊天记录功能，输出为合并转发节点。
 - 已移除语音生成命令。
 - 已移除骰子指令处理。

@@ -1,3 +1,8 @@
+# v1.6.17
+
+- 新增下线 Webhook 发送端 `offline_webhook_senders`：检测到 AIOCQHTTP `bot_offline` notice 后可向多个 HTTP 接收端推送签名 JSON。
+- 新增下线 Webhook 接收端 `offline_webhook_receiver` 与接收规则 `offline_webhook_receive_rules`：收到合法签名后可向指定机器人会话主动发送提醒，并支持消息模板和 @ 目标。
+
 # v1.6.16
 
 - 移除 `offline_mail_monitors` 邮箱下线检测端、IMAP 轮询逻辑、检测端配置项和对应测试。

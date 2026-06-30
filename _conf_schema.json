@@ -129,6 +129,156 @@
       }
     }
   },
+  "offline_webhook_senders": {
+    "type": "template_list",
+    "description": "下线 Webhook 发送端",
+    "hint": "检测到 AIOCQHTTP 账号下线 notice 后，向一个或多个 HTTP Webhook 地址推送签名 JSON 事件。可与邮件通知同时使用。",
+    "default": [],
+    "templates": {
+      "offline_webhook_sender": {
+        "name": "下线 Webhook 发送目标",
+        "hint": "配置一个接收端 URL 和共享密钥。",
+        "display_item": "name",
+        "hide_hint_in_list": true,
+        "items": {
+          "name": {
+            "type": "string",
+            "description": "发送目标名称",
+            "hint": "用于日志，例如 alert-to-ni。",
+            "default": ""
+          },
+          "enabled": {
+            "type": "bool",
+            "description": "启用本发送目标",
+            "hint": "关闭后保留配置，但不再推送。",
+            "default": true
+          },
+          "webhook_url": {
+            "type": "string",
+            "description": "Webhook 接收地址",
+            "hint": "例如 http://127.0.0.1:8765/astrbot-util/offline。",
+            "default": ""
+          },
+          "secret": {
+            "type": "string",
+            "description": "Webhook 共享密钥",
+            "hint": "发送端和接收规则必须填写相同密钥，用于 HMAC-SHA256 签名校验。",
+            "default": ""
+          },
+          "timeout_seconds": {
+            "type": "int",
+            "description": "请求超时秒数",
+            "hint": "范围 1-120。",
+            "default": 10
+          },
+          "retry_count": {
+            "type": "int",
+            "description": "失败重试次数",
+            "hint": "范围 0-10。",
+            "default": 2
+          }
+        }
+      }
+    }
+  },
+  "offline_webhook_receiver": {
+    "description": "下线 Webhook 接收端服务",
+    "type": "object",
+    "hint": "启动一个 HTTP 接收端，接收其他 AstrBot 实例推送的下线事件。具体转发目标在 offline_webhook_receive_rules 中配置。",
+    "items": {
+      "enable_offline_webhook_receiver": {
+        "description": "是否启用 Webhook 接收端",
+        "type": "bool",
+        "default": false,
+        "hint": "true / false"
+      },
+      "listen_host": {
+        "description": "监听地址",
+        "type": "string",
+        "default": "127.0.0.1",
+        "hint": "本机使用 127.0.0.1；需要外部访问可填 0.0.0.0。"
+      },
+      "listen_port": {
+        "description": "监听端口",
+        "type": "int",
+        "default": 8765,
+        "hint": "1-65535"
+      },
+      "path": {
+        "description": "接收路径",
+        "type": "string",
+        "default": "/astrbot-util/offline",
+        "hint": "发送端 URL 需要包含同一路径。"
+      }
+    }
+  },
+  "offline_webhook_receive_rules": {
+    "type": "template_list",
+    "description": "下线 Webhook 接收规则",
+    "hint": "接收端收到合法签名的下线事件后，按规则向指定机器人会话主动发送提醒。支持多条规则。",
+    "default": [],
+    "templates": {
+      "offline_webhook_receive_rule": {
+        "name": "下线 Webhook 接收规则",
+        "hint": "配置共享密钥、目标机器人会话、提醒模板和 @ 目标。",
+        "display_item": "name",
+        "hide_hint_in_list": true,
+        "items": {
+          "name": {
+            "type": "string",
+            "description": "规则名称",
+            "hint": "用于日志，例如 ni-group-alert。",
+            "default": ""
+          },
+          "enabled": {
+            "type": "bool",
+            "description": "启用本接收规则",
+            "hint": "关闭后保留配置，但不再转发。",
+            "default": true
+          },
+          "secret": {
+            "type": "string",
+            "description": "Webhook 共享密钥",
+            "hint": "必须与发送端 secret 相同。",
+            "default": ""
+          },
+          "platform_id": {
+            "type": "string",
+            "description": "发送提醒的机器人平台 ID",
+            "hint": "填写 event.get_platform_id() 对应的值，例如 li、ni。",
+            "default": ""
+          },
+          "message_type": {
+            "type": "string",
+            "description": "目标会话类型",
+            "hint": "群聊填写 GroupMessage，私聊填写 FriendMessage。",
+            "default": "GroupMessage"
+          },
+          "session_id": {
+            "type": "string",
+            "description": "目标会话 ID",
+            "hint": "群聊填群号，私聊填 QQ 号。",
+            "default": ""
+          },
+          "message_template": {
+            "type": "text",
+            "description": "主动提醒消息模板",
+            "hint": "可用变量：{event}、{self_id}、{user_id}、{platform}、{message}、{notice_type}、{post_type}、{source_time}、{timestamp}、{rule}、{session}。",
+            "default": "Detected bot account offline alert.\nBot: {self_id}\nUser: {user_id}\nPlatform: {platform}\nMessage: {message}"
+          },
+          "at_targets": {
+            "type": "list",
+            "description": "@ 目标列表",
+            "hint": "填写 QQ 号可 @ 指定成员；填写 all 可 @ 全体成员。",
+            "default": [],
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
   "history_chunking": {
     "description": "历史消息切割与读取工具",
     "type": "object",
