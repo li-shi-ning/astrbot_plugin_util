@@ -61,6 +61,26 @@ AstrBot 当前配置界面没有目录选择器，因此 `audio_directory` 使�
 
 当前只负责检测和发邮件。若 AstrBot 会话白名单在插件处理前拦截该 notice，需要后续把对应下线通知会话放入白名单。
 
+## 下线邮件检测端
+
+`offline_mail_monitors` 可以配置多个邮箱检测端。每个检测端会周期性通过 IMAP 获取指定邮箱的新邮件；如果新邮件主题或正文命中下线告警关键词，就使用指定机器人向指定会话主动发送提醒。
+
+每条配置包含：
+
+- `name`：检测端名称，用于日志和持久化状态。
+- `enabled`：本检测端独立开关。
+- `platform_id`：负责发送提醒的机器人平台 ID，例如 `li`、`ni`。
+- `message_type`：目标会话类型，群聊填 `GroupMessage`，私聊填 `FriendMessage`。
+- `session_id`：目标会话 ID，群聊填群号，私聊填 QQ 号。
+- `imap_host` / `imap_port`：检测邮箱的 IMAP SSL 服务地址和端口，QQ 邮箱通常是 `imap.qq.com` / `993`。
+- `username` / `password`：检测邮箱账号和邮箱授权码。
+- `folder`：检测邮箱文件夹，通常为 `INBOX`。
+- `interval_seconds`：检测间隔秒数。
+- `subject_keywords` / `body_keywords`：识别下线告警邮件的主题和正文关键词。
+- `max_fetch_count`：单次最多检查的新邮件数量。
+
+插件会把每个检测端已处理的最新 UID 保存到 AstrBot 插件数据目录 `data/plugin_data/astrbot_plugin_util/offline_mail_monitor_state.json`。首次启动某条检测端配置时只记录当前邮箱最新 UID，不会推送历史邮件；之后只处理新邮件。
+
 ## 群友史
 
 - `/群友史 QQ号 消息内容 | QQ号 消息内容 | ...`：按输入构造合并转发聊天记录。
@@ -79,6 +99,7 @@ AstrBot 当前配置界面没有目录选择器，因此 `audio_directory` 使�
 - 新增 `/点歌` 音乐搜索与点歌功能。
 - 新增 `/网易云登录` 扫码登录功能，可自动持久化保存网易云 Cookie。
 - 新增 AIOCQHTTP 账号下线邮件通知功能。
+- 新增邮箱下线检测端，可通过 IMAP 检测下线告警邮件并主动发送提醒。
 - 新增 `群友史` 构造聊天记录功能，输出为合并转发节点。
 - 已移除语音生成命令。
 - 已移除骰子指令处理。
