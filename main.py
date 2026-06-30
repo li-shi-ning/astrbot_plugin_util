@@ -96,6 +96,13 @@ try:
         send_offline_webhook,
         verify_webhook_signature,
     )
+    from .core.roleplay_knowledge import (
+        ROLEPLAY_KNOWLEDGE_TOOL_NAME,
+        RoleplayKnowledgeBase,
+        format_roleplay_search_results,
+        load_roleplay_knowledge_config,
+        select_roleplay_database,
+    )
 except ImportError:
     from core.Filter import register_pack_type
     from core.group_history import (
@@ -159,6 +166,13 @@ except ImportError:
         send_offline_webhook,
         verify_webhook_signature,
     )
+    from core.roleplay_knowledge import (
+        ROLEPLAY_KNOWLEDGE_TOOL_NAME,
+        RoleplayKnowledgeBase,
+        format_roleplay_search_results,
+        load_roleplay_knowledge_config,
+        select_roleplay_database,
+    )
 
 
 SUPPORTED_KEYWORD_VOICE_SUFFIXES = {
@@ -175,7 +189,8 @@ LOVE_MESSAGES_PATH = (PLUGIN_ROOT / "core" / "love_messages.txt").resolve()
 PLUGIN_DATA_DIR = (Path(get_astrbot_plugin_data_path()) / "astrbot_plugin_util").resolve()
 NETEASE_LOGIN_DATA_DIR = (PLUGIN_DATA_DIR / "netease_login").resolve()
 NETEASE_COOKIE_PATH = (NETEASE_LOGIN_DATA_DIR / "cookie.json").resolve()
-@register("util", "lishinig", "私人插件", "1.6.17")
+ROLEPLAY_KNOWLEDGE_ROOT = (PLUGIN_ROOT / "cs" / "output").resolve()
+@register("util", "lishinig", "私人插件", "1.6.18")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -355,6 +370,7 @@ class util(Star):
         group_history_config = config_section("group_history")
         music_search_config = config_section("music_search")
         offline_email_alert_config = config_section("offline_email_alert")
+        roleplay_knowledge_config = config_section("roleplay_knowledge")
 
         self.enable_history_chunking_feature = config_value(
             history_config,
@@ -443,6 +459,12 @@ class util(Star):
             group_history_config,
             "enable_group_history_feature",
             True,
+        )
+        self.roleplay_knowledge_config = load_roleplay_knowledge_config(
+            roleplay_knowledge_config
+        )
+        self.roleplay_knowledge_base = RoleplayKnowledgeBase.from_root(
+            ROLEPLAY_KNOWLEDGE_ROOT
         )
         self.offline_email_alert_config = build_offline_email_alert_config(
             offline_email_alert_config
@@ -1403,6 +1425,9 @@ class util(Star):
         if event.get_platform_id() != "ni" or not self.enable_let_li_speak_tool:
             self._remove_tool_from_request(req, "let_li_speak")
 
+        if not self.roleplay_knowledge_config.enabled:
+            self._remove_tool_from_request(req, ROLEPLAY_KNOWLEDGE_TOOL_NAME)
+
         if not self.enable_history_chunking_feature:
             self._scoped_request_history_cache[
                 self._request_scope_cache_key(event)
@@ -1891,6 +1916,35 @@ class util(Star):
         ]
         lines.extend(self._format_history_entries(page_contexts))
         return "\n".join(lines)
+
+    @filter.llm_tool(name="search_roleplay_knowledge")
+    async def search_roleplay_knowledge(
+        self,
+        event: AstrMessageEvent,
+        query: str,
+        limit: int = 0,
+    ) -> str:
+        """Search local roleplay knowledge documents for the current bot persona.
+
+        Args:
+            query(string): Keywords to search, such as a character name, alias, relationship, tone, or setting term.
+            limit(number): Optional maximum number of matching documents to return. Use 0 to follow plugin config.
+        """
+        if not self.roleplay_knowledge_config.enabled:
+            return "The roleplay knowledge search tool is disabled by configuration."
+
+        database = select_roleplay_database(event.get_platform_id())
+        safe_limit = max(
+            1,
+            min(int(limit or self.roleplay_knowledge_config.max_results), 10),
+        )
+        results = self.roleplay_knowledge_base.search(
+            database=database,
+            query=query,
+            limit=safe_limit,
+            max_chars_per_result=self.roleplay_knowledge_config.max_chars_per_result,
+        )
+        return format_roleplay_search_results(database, query, results)
 
     @filter.on_decorating_result()
     async def split_llm_result_before_send(self, event: AstrMessageEvent):

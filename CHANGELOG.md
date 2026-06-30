@@ -1,3 +1,8 @@
+# v1.6.18
+
+- 新增角色资料库搜索工具 `search_roleplay_knowledge`，可把 `cs/output` 中的角色扮演资料作为本地资料库供大模型检索。
+- 新增 `roleplay_knowledge` 配置开关；当前配置文件名称为 `ni` 时使用艾玛资料库，其他配置默认使用希罗资料库。
+
 # v1.6.17
 
 - 新增下线 Webhook 发送端 `offline_webhook_senders`：检测到 AIOCQHTTP `bot_offline` notice 后可向多个 HTTP 接收端推送签名 JSON。

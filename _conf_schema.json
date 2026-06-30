@@ -279,6 +279,31 @@
       }
     }
   },
+  "roleplay_knowledge": {
+    "description": "角色资料库搜索工具",
+    "type": "object",
+    "hint": "把 cs/output 中的艾玛与希罗角色资料作为本地资料库，向大模型提供搜索工具。配置文件名称为 ni 时使用艾玛资料库，其他默认使用希罗资料库。",
+    "items": {
+      "enable_roleplay_knowledge_tool": {
+        "description": "是否向大模型暴露角色资料库搜索工具",
+        "type": "bool",
+        "default": false,
+        "hint": "true / false"
+      },
+      "max_results": {
+        "description": "每次搜索最多返回的资料条数",
+        "type": "int",
+        "default": 4,
+        "hint": "1-10"
+      },
+      "max_chars_per_result": {
+        "description": "每条资料最多返回的字符数",
+        "type": "int",
+        "default": 900,
+        "hint": "200-4000"
+      }
+    }
+  },
   "history_chunking": {
     "description": "历史消息切割与读取工具",
     "type": "object",
