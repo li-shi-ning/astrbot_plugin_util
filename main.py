@@ -170,7 +170,7 @@ OFFLINE_MAIL_MONITOR_STATE_PATH = (
 ).resolve()
 
 
-@register("util", "lishinig", "私人插件", "1.6.11")
+@register("util", "lishinig", "私人插件", "1.6.12")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -549,10 +549,14 @@ class util(Star):
 
         for alert in alerts:
             message = format_offline_mail_alert_message(alert, settings)
+            components = self._build_offline_mail_alert_components(
+                message,
+                settings.at_targets,
+            )
             try:
                 sent = await self.context.send_message(
                     settings.target_session,
-                    MessageChain([Comp.Plain(message)]),
+                    MessageChain(components),
                 )
             except Exception as exc:
                 logger.error(
@@ -575,6 +579,26 @@ class util(Star):
                     settings.name,
                     settings.target_session,
                 )
+
+    @staticmethod
+    def _build_offline_mail_alert_components(
+        message: str,
+        at_targets: tuple[str, ...],
+    ) -> list:
+        components = []
+        for target in at_targets:
+            normalized_target = str(target).strip()
+            if not normalized_target:
+                continue
+            if normalized_target.lower() == "all":
+                components.append(Comp.AtAll())
+            else:
+                components.append(Comp.At(qq=normalized_target))
+        if components:
+            components.append(Comp.Plain("\n" + message))
+        else:
+            components.append(Comp.Plain(message))
+        return components
 
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP, priority=10000)
     @filter.event_message_type(filter.EventMessageType.ALL, priority=10000)

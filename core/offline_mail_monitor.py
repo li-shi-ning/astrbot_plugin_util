@@ -18,6 +18,15 @@ DEFAULT_OFFLINE_MAIL_BODY_KEYWORDS = (
     "bot account offline notice",
     "notice_type: bot_offline",
 )
+DEFAULT_OFFLINE_MAIL_MESSAGE_TEMPLATE = (
+    "Detected bot account offline alert email.\n"
+    "Monitor: {monitor}\n"
+    "Mailbox: {mailbox}\n"
+    "UID: {uid}\n"
+    "Subject: {subject}\n"
+    "From: {from_addr}\n"
+    "Date: {date}"
+)
 
 
 @dataclass(frozen=True)
@@ -36,6 +45,8 @@ class OfflineMailMonitorSettings:
     subject_keywords: tuple[str, ...]
     body_keywords: tuple[str, ...]
     max_fetch_count: int
+    message_template: str
+    at_targets: tuple[str, ...]
 
     @property
     def key(self) -> str:
@@ -107,6 +118,11 @@ def _build_settings(item: Mapping[str, Any], index: int) -> OfflineMailMonitorSe
         subject_keywords=subject_keywords,
         body_keywords=body_keywords,
         max_fetch_count=_bounded_int(item.get("max_fetch_count", 20), 1, 200, 20),
+        message_template=str(
+            item.get("message_template", DEFAULT_OFFLINE_MAIL_MESSAGE_TEMPLATE)
+            or DEFAULT_OFFLINE_MAIL_MESSAGE_TEMPLATE
+        ),
+        at_targets=_string_tuple(item.get("at_targets"), ()),
     )
 
 
@@ -209,16 +225,34 @@ def is_offline_alert_message(
     )
 
 
-def format_offline_mail_alert_message(alert: OfflineMailAlert, settings: OfflineMailMonitorSettings) -> str:
-    return (
-        "Detected bot account offline alert email.\n"
-        f"Monitor: {settings.name}\n"
-        f"Mailbox: {settings.username}\n"
-        f"UID: {alert.uid}\n"
-        f"Subject: {alert.subject or '(no subject)'}\n"
-        f"From: {alert.from_addr or '(unknown)'}\n"
-        f"Date: {alert.date or '(unknown)'}"
-    )
+def format_offline_mail_alert_message(
+    alert: OfflineMailAlert,
+    settings: OfflineMailMonitorSettings,
+) -> str:
+    values = offline_mail_alert_template_values(alert, settings)
+    try:
+        return settings.message_template.format(**values)
+    except (KeyError, IndexError, ValueError):
+        return DEFAULT_OFFLINE_MAIL_MESSAGE_TEMPLATE.format(**values)
+
+
+def offline_mail_alert_template_values(
+    alert: OfflineMailAlert,
+    settings: OfflineMailMonitorSettings,
+) -> dict[str, str | int]:
+    return {
+        "monitor": settings.name,
+        "mailbox": settings.username,
+        "uid": alert.uid,
+        "subject": alert.subject or "(no subject)",
+        "from_addr": alert.from_addr or "(unknown)",
+        "date": alert.date or "(unknown)",
+        "body_preview": alert.body_preview,
+        "platform_id": settings.platform_id,
+        "message_type": settings.message_type,
+        "session_id": settings.session_id,
+        "session": settings.target_session,
+    }
 
 
 def _login(settings: OfflineMailMonitorSettings) -> imaplib.IMAP4_SSL:

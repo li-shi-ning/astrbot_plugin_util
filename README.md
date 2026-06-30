@@ -78,6 +78,19 @@ AstrBot 当前配置界面没有目录选择器，因此 `audio_directory` 使�
 - `interval_seconds`：检测间隔秒数。
 - `subject_keywords` / `body_keywords`：识别下线告警邮件的主题和正文关键词。
 - `max_fetch_count`：单次最多检查的新邮件数量。
+- `message_template`：主动提醒消息模板。
+- `at_targets`：主动提醒前追加的 @ 目标列表，填写 QQ 号可 @ 指定用户，填写 `all` 可 @ 全体成员。
+
+`message_template` 支持以下变量：
+
+- `{monitor}`：检测端名称。
+- `{mailbox}`：检测邮箱账号。
+- `{uid}`：邮件 UID。
+- `{subject}`：邮件主题。
+- `{from_addr}`：邮件发件人。
+- `{date}`：邮件日期。
+- `{body_preview}`：邮件正文预览。
+- `{platform_id}`、`{message_type}`、`{session_id}`、`{session}`：目标会话信息。
 
 插件会把每个检测端已处理的最新 UID 保存到 AstrBot 插件数据目录 `data/plugin_data/astrbot_plugin_util/offline_mail_monitor_state.json`。首次启动某条检测端配置时只记录当前邮箱最新 UID，不会推送历史邮件；之后只处理新邮件。
 

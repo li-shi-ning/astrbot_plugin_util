@@ -235,6 +235,21 @@
             "description": "单次最多检查的新邮件数量",
             "hint": "范围 1-200，避免长时间未运行后一次拉取过多邮件。",
             "default": 20
+          },
+          "message_template": {
+            "type": "text",
+            "description": "主动提醒消息模板",
+            "hint": "可用变量：{monitor}、{mailbox}、{uid}、{subject}、{from_addr}、{date}、{body_preview}、{platform_id}、{message_type}、{session_id}、{session}。",
+            "default": "Detected bot account offline alert email.\nMonitor: {monitor}\nMailbox: {mailbox}\nUID: {uid}\nSubject: {subject}\nFrom: {from_addr}\nDate: {date}"
+          },
+          "at_targets": {
+            "type": "list",
+            "description": "@ 目标列表",
+            "hint": "填写要 @ 的 QQ 号；填写 all 可 @ 全体成员。只建议在群聊目标中使用。",
+            "default": [],
+            "items": {
+              "type": "string"
+            }
           }
         }
       }

@@ -43,6 +43,16 @@ def make_settings(**overrides) -> OfflineMailMonitorSettings:
         "subject_keywords": ("AstrBot bot account offline alert",),
         "body_keywords": ("notice_type: bot_offline",),
         "max_fetch_count": 20,
+        "message_template": (
+            "Detected bot account offline alert email.\n"
+            "Monitor: {monitor}\n"
+            "Mailbox: {mailbox}\n"
+            "UID: {uid}\n"
+            "Subject: {subject}\n"
+            "From: {from_addr}\n"
+            "Date: {date}"
+        ),
+        "at_targets": (),
     }
     values.update(overrides)
     return OfflineMailMonitorSettings(**values)
@@ -69,6 +79,8 @@ def test_loads_multiple_offline_mail_monitor_settings():
                     "username": "li@qq.com",
                     "password": "code",
                     "interval_seconds": 1,
+                    "message_template": "Alert {monitor} {uid} {session}",
+                    "at_targets": ["12345", "all", ""],
                 },
                 {
                     "name": "ni",
@@ -86,6 +98,8 @@ def test_loads_multiple_offline_mail_monitor_settings():
     assert len(settings) == 2
     assert settings[0].target_session == "li:GroupMessage:10001"
     assert settings[0].interval_seconds == 10
+    assert settings[0].message_template == "Alert {monitor} {uid} {session}"
+    assert settings[0].at_targets == ("12345", "all")
     assert settings[1].enabled is False
     assert settings[1].target_session == "ni:FriendMessage:20002"
 
@@ -196,6 +210,40 @@ def test_format_offline_mail_alert_message_contains_target_fields():
     assert "UID: 9" in text
 
 
+def test_format_offline_mail_alert_message_uses_custom_template():
+    alert = OfflineMailAlert(
+        uid=9,
+        subject="AstrBot bot account offline alert",
+        from_addr="sender@example.com",
+        date="2026-06-30T09:00:00+08:00",
+        body_preview="preview text",
+    )
+    settings = make_settings(
+        message_template=(
+            "custom {monitor} {uid} {subject} {session} {body_preview}"
+        )
+    )
+
+    text = format_offline_mail_alert_message(alert, settings)
+
+    assert text == (
+        "custom li-monitor 9 AstrBot bot account offline alert "
+        "li:GroupMessage:10001 preview text"
+    )
+
+
+def test_build_offline_mail_alert_components_supports_at_targets():
+    components = util._build_offline_mail_alert_components(
+        "hello",
+        ("12345", "all"),
+    )
+
+    assert len(components) == 3
+    assert str(components[0].qq) == "12345"
+    assert components[1].qq == "all"
+    assert components[2].text == "\nhello"
+
+
 @pytest.mark.asyncio
 async def test_plugin_check_sends_proactive_message(monkeypatch):
     sent = []
@@ -223,7 +271,7 @@ async def test_plugin_check_sends_proactive_message(monkeypatch):
     monkeypatch.setattr(main, "save_offline_mail_state", fake_save)
     plugin = util.__new__(util)
     plugin.context = SimpleNamespace(send_message=send_message)
-    settings = make_settings()
+    settings = make_settings(message_template="Alert UID {uid}", at_targets=("12345",))
     plugin.offline_mail_monitor_state = {settings.key: 5}
 
     await plugin._check_offline_mail_monitor(settings)
@@ -231,4 +279,5 @@ async def test_plugin_check_sends_proactive_message(monkeypatch):
     assert plugin.offline_mail_monitor_state[settings.key] == 6
     assert saved[-1][settings.key] == 6
     assert sent[0][0] == "li:GroupMessage:10001"
-    assert "UID: 6" in sent[0][1].chain[0].text
+    assert str(sent[0][1].chain[0].qq) == "12345"
+    assert sent[0][1].chain[1].text == "\nAlert UID 6"
