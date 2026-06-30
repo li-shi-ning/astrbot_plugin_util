@@ -94,9 +94,9 @@ AstrBot 当前配置界面没有目录选择器，因此 `audio_directory` 使�
 数据位置：
 
 - 源资料：插件目录下的 `cs/output`。
-- SQLite 数据库：AstrBot 插件数据目录下的 `astrbot_plugin_util/roleplay_knowledge/roleplay_knowledge.sqlite3`。
+- SQLite 数据库：插件目录下的 `roleplay_knowledge/roleplay_knowledge.sqlite3`，该文件纳入 git 管理。
 
-插件启动时会从 `cs/output` 重建数据库，方便你直接修改 markdown 源资料后重启生效。
+插件启动时会从 `cs/output` 按插件内相对路径重建数据库，方便你直接修改 markdown 源资料后重启生效。
 
 在插件配置页的 `roleplay_knowledge` 中配置：
 

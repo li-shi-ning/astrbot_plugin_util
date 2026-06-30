@@ -1,6 +1,11 @@
+# v1.6.20
+
+- 将角色资料库 SQLite 文件移动到插件目录 `roleplay_knowledge/roleplay_knowledge.sqlite3`，使数据库文件可被 git 管理。
+- 角色资料库读取改为插件内相对路径，并在运行时以插件根目录解析，避免依赖 AstrBot 插件数据目录。
+
 # v1.6.19
 
-- 将角色资料库从运行时内存索引改为 SQLite 数据库，文件保存到 AstrBot 插件数据目录 `astrbot_plugin_util/roleplay_knowledge/roleplay_knowledge.sqlite3`。
+- 将角色资料库从运行时内存索引改为 SQLite 数据库。
 - 角色资料库启动时会从 `cs/output` 重建到数据库，搜索工具从数据库读取资料，并继续按 `ni` / 其他配置区分艾玛与希罗资料库。
 
 # v1.6.18

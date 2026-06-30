@@ -53,12 +53,17 @@ def test_roleplay_knowledge_selects_database_by_platform_id():
 
 
 def test_roleplay_knowledge_builds_sqlite_database(tmp_path):
-    db_path = tmp_path / "roleplay_knowledge.sqlite3"
-    knowledge_base = RoleplayKnowledgeBase.from_root(ROLEPLAY_KNOWLEDGE_ROOT, db_path)
+    db_path = Path("roleplay_knowledge.sqlite3")
+    knowledge_base = RoleplayKnowledgeBase.from_root(
+        ROLEPLAY_KNOWLEDGE_ROOT,
+        db_path,
+        base_dir=tmp_path,
+    )
 
-    assert db_path.exists()
-    assert knowledge_base.db_path == db_path.resolve()
-    with sqlite3.connect(db_path) as connection:
+    resolved_db_path = tmp_path / db_path
+    assert resolved_db_path.exists()
+    assert knowledge_base.db_path == resolved_db_path.resolve()
+    with sqlite3.connect(resolved_db_path) as connection:
         ema_count = connection.execute(
             "SELECT COUNT(*) FROM documents WHERE database = 'ema'"
         ).fetchone()[0]
@@ -111,9 +116,10 @@ async def test_roleplay_knowledge_tool_uses_ema_for_ni(tmp_path):
     assert "matches:" in result
 
 
-def test_roleplay_knowledge_db_path_uses_plugin_data_directory():
+def test_roleplay_knowledge_db_path_is_plugin_relative():
     assert ROLEPLAY_KNOWLEDGE_DB_PATH.name == "roleplay_knowledge.sqlite3"
     assert ROLEPLAY_KNOWLEDGE_DB_PATH.parent.name == "roleplay_knowledge"
+    assert not ROLEPLAY_KNOWLEDGE_DB_PATH.is_absolute()
 
 
 def test_format_roleplay_search_results_reports_empty_matches():

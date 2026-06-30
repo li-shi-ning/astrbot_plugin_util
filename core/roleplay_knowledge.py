@@ -51,9 +51,11 @@ def load_roleplay_knowledge_config(config: Mapping[str, Any]) -> RoleplayKnowled
 
 
 class RoleplayKnowledgeBase:
-    def __init__(self, db_path: Path):
+    def __init__(self, db_path: Path, base_dir: Path | None = None):
         self.db_path = Path(db_path)
         if str(self.db_path) != ":memory:":
+            if not self.db_path.is_absolute() and base_dir is not None:
+                self.db_path = Path(base_dir) / self.db_path
             self.db_path = self.db_path.resolve()
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._ensure_schema()
@@ -63,6 +65,7 @@ class RoleplayKnowledgeBase:
         cls,
         root: Path,
         db_path: Path | None = None,
+        base_dir: Path | None = None,
     ) -> "RoleplayKnowledgeBase":
         if db_path is None:
             db_file = tempfile.NamedTemporaryFile(
@@ -72,7 +75,7 @@ class RoleplayKnowledgeBase:
             )
             db_file.close()
             db_path = Path(db_file.name)
-        knowledge_base = cls(db_path)
+        knowledge_base = cls(db_path, base_dir=base_dir)
         knowledge_base.rebuild_from_root(root)
         return knowledge_base
 
