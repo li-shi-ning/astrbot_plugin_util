@@ -38,6 +38,7 @@ def make_settings(**overrides) -> OfflineMailMonitorSettings:
         "session_id": "10001",
         "imap_host": "imap.qq.com",
         "imap_port": 993,
+        "imap_timeout_seconds": 20,
         "username": "bot@qq.com",
         "password": "auth-code",
         "folder": "INBOX",
@@ -81,6 +82,7 @@ def test_loads_multiple_offline_mail_monitor_settings():
                     "username": "li@qq.com",
                     "password": "code",
                     "interval_seconds": 1,
+                    "imap_timeout_seconds": 2,
                     "message_template": "Alert {monitor} {uid} {session}",
                     "at_targets": ["12345", "all", ""],
                 },
@@ -100,6 +102,7 @@ def test_loads_multiple_offline_mail_monitor_settings():
     assert len(settings) == 2
     assert settings[0].target_session == "li:GroupMessage:10001"
     assert settings[0].interval_seconds == 10
+    assert settings[0].imap_timeout_seconds == 3
     assert settings[0].message_template == "Alert {monitor} {uid} {session}"
     assert settings[0].at_targets == ("12345", "all")
     assert settings[1].enabled is False
@@ -133,9 +136,10 @@ def test_fetch_new_offline_alerts_filters_messages(monkeypatch):
     }
 
     class FakeIMAP:
-        def __init__(self, host, port):
+        def __init__(self, host, port, timeout=None):
             self.host = host
             self.port = port
+            self.timeout = timeout
 
         def __enter__(self):
             return self
@@ -178,7 +182,7 @@ def test_fetch_new_offline_alerts_with_stats_reports_counts(monkeypatch):
     }
 
     class FakeIMAP:
-        def __init__(self, host, port):
+        def __init__(self, host, port, timeout=None):
             pass
 
         def __enter__(self):
@@ -216,12 +220,13 @@ def test_describe_offline_mail_monitor_masks_mailbox_and_omits_password():
 
     assert "bo***t@qq.com" in description
     assert "auth-code" not in description
+    assert "timeout=20s" in description
     assert "target=li:GroupMessage:10001" in description
 
 
 def test_get_current_max_uid(monkeypatch):
     class FakeIMAP:
-        def __init__(self, host, port):
+        def __init__(self, host, port, timeout=None):
             pass
 
         def __enter__(self):

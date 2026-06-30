@@ -8,6 +8,7 @@ import uuid
 from collections.abc import Mapping
 from contextlib import suppress
 from dataclasses import replace
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -172,7 +173,7 @@ OFFLINE_MAIL_MONITOR_STATE_PATH = (
 ).resolve()
 
 
-@register("util", "lishinig", "私人插件", "1.6.14")
+@register("util", "lishinig", "私人插件", "1.6.15")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -523,10 +524,33 @@ class util(Star):
                     settings
                 )
                 if not initialized:
-                    await asyncio.sleep(settings.interval_seconds)
+                    await self._sleep_before_next_offline_mail_monitor_check(
+                        settings,
+                        "初始化失败",
+                    )
                     continue
                 await self._check_offline_mail_monitor(settings)
-                await asyncio.sleep(settings.interval_seconds)
+                await self._sleep_before_next_offline_mail_monitor_check(
+                    settings,
+                    "本轮检查完成",
+                )
+
+    async def _sleep_before_next_offline_mail_monitor_check(
+        self,
+        settings,
+        reason: str,
+    ) -> None:
+        next_check_at = datetime.now() + timedelta(
+            seconds=settings.interval_seconds
+        )
+        logger.info(
+            "[util] 邮箱下线检测端等待下次检查: %s reason=%s wait=%ss next_check_at=%s",
+            settings.name,
+            reason,
+            settings.interval_seconds,
+            next_check_at.strftime("%Y-%m-%d %H:%M:%S"),
+        )
+        await asyncio.sleep(settings.interval_seconds)
 
     async def _initialize_offline_mail_monitor_state(self, settings) -> bool:
         if settings.key in self.offline_mail_monitor_state:

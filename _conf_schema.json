@@ -183,6 +183,12 @@
             "hint": "QQ 邮箱通常为 993。",
             "default": 993
           },
+          "imap_timeout_seconds": {
+            "type": "int",
+            "description": "IMAP 连接超时秒数",
+            "hint": "范围 3-300。网络异常时超过该时间会快速失败并等待下次重试，避免初始化卡住太久。",
+            "default": 20
+          },
           "username": {
             "type": "string",
             "description": "检测邮箱账号",

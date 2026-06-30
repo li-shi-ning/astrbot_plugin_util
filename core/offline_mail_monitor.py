@@ -38,6 +38,7 @@ class OfflineMailMonitorSettings:
     session_id: str
     imap_host: str
     imap_port: int
+    imap_timeout_seconds: int
     username: str
     password: str
     folder: str
@@ -127,6 +128,12 @@ def _build_settings(item: Mapping[str, Any], index: int) -> OfflineMailMonitorSe
         session_id=str(item.get("session_id", "")).strip(),
         imap_host=str(item.get("imap_host", "imap.qq.com")).strip() or "imap.qq.com",
         imap_port=_bounded_int(item.get("imap_port", 993), 1, 65535, 993),
+        imap_timeout_seconds=_bounded_int(
+            item.get("imap_timeout_seconds", 20),
+            3,
+            300,
+            20,
+        ),
         username=str(item.get("username", "")).strip(),
         password=str(item.get("password", "")).strip(),
         folder=str(item.get("folder", "INBOX")).strip() or "INBOX",
@@ -260,7 +267,8 @@ def describe_offline_mail_monitor(settings: OfflineMailMonitorSettings) -> str:
     return (
         f"name={settings.name} key={settings.key} "
         f"mailbox={mask_mailbox(settings.username)} "
-        f"imap={settings.imap_host}:{settings.imap_port} folder={settings.folder} "
+        f"imap={settings.imap_host}:{settings.imap_port} "
+        f"timeout={settings.imap_timeout_seconds}s folder={settings.folder} "
         f"interval={settings.interval_seconds}s max_fetch={settings.max_fetch_count} "
         f"target={settings.target_session} "
         f"subject_keywords={len(settings.subject_keywords)} "
@@ -314,7 +322,11 @@ def offline_mail_alert_template_values(
 
 
 def _login(settings: OfflineMailMonitorSettings) -> imaplib.IMAP4_SSL:
-    mailbox = imaplib.IMAP4_SSL(settings.imap_host, settings.imap_port)
+    mailbox = imaplib.IMAP4_SSL(
+        settings.imap_host,
+        settings.imap_port,
+        timeout=settings.imap_timeout_seconds,
+    )
     mailbox.login(settings.username, settings.password)
     return mailbox
 

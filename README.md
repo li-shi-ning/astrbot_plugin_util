@@ -103,7 +103,7 @@ uv run python scripts\send_test_email.py --offline-alert
 
 脚本默认读取 `cs\QQ_mailbox\text.yaml` 中的 `sender`、`QQ_password` 和 `receiver`。
 
-检测端运行时会在日志中输出脱敏后的 IMAP 配置摘要、初始化 UID、每轮轮询的 `last_uid` / 新邮件数 / 命中告警数 / 状态更新信息。邮箱授权码不会写入日志。
+检测端运行时会在日志中输出脱敏后的 IMAP 配置摘要、初始化 UID、每轮轮询的 `last_uid` / 新邮件数 / 命中告警数 / 状态更新信息；初始化失败或一轮检查结束后，也会打印下次检查时间。邮箱授权码不会写入日志。IMAP 连接默认 20 秒超时，可在检测端配置中通过 `imap_timeout_seconds` 调整。
 
 ## 群友史
 
