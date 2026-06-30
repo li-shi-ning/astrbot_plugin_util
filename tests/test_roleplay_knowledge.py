@@ -83,6 +83,25 @@ def test_roleplay_knowledge_builds_sqlite_database(tmp_path):
             """
         ).fetchone()[0]
     assert self_docs == 0
+    with sqlite3.connect(resolved_db_path) as connection:
+        ema_augmented = connection.execute(
+            """
+            SELECT content FROM documents
+            WHERE database = 'ema'
+              AND source = '艾玛提示词_13份/02_艾玛对紫藤亚里沙的认知提示词.md'
+            """
+        ).fetchone()[0]
+        hiro_augmented = connection.execute(
+            """
+            SELECT content FROM documents
+            WHERE database = 'hiro'
+              AND source = '希罗提示词_13份/02_希罗对樱羽艾玛的认知提示词.md'
+            """
+        ).fetchone()[0]
+    assert "Skill 资料补充" in ema_augmented
+    assert "## Alisa" in ema_augmented
+    assert "Skill 资料补充" in hiro_augmented
+    assert "## Canonical Identity" in hiro_augmented
 
 
 def test_roleplay_knowledge_searches_split_databases(tmp_path):

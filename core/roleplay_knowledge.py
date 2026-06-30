@@ -14,6 +14,23 @@ ROLEPLAY_KNOWLEDGE_DB_FILENAME = "roleplay_knowledge.sqlite3"
 SCHEMA_VERSION = 1
 EMA_PROMPT_PREFIX = "\u827e\u739b"
 HIRO_PROMPT_PREFIX = "\u5e0c\u7f57"
+PUBLIC_BACKGROUND_FILENAME = "\u9b54\u5973\u5c9b\u80cc\u666f\u540d\u8bcd\u8bcd\u5178.md"
+
+CHARACTER_SKILL_REFERENCES = {
+    "\u6a31\u7fbd\u827e\u739b": ("Ema", "ema.md"),
+    "\u4e8c\u9636\u5802\u5e0c\u7f57": ("Hiro", "hiro.md"),
+    "\u7d2b\u85e4\u4e9a\u91cc\u6c99": ("Alisa", "arisa.md"),
+    "\u590f\u76ee\u5b89\u5b89": ("AnAn", "anan.md"),
+    "\u57ce\u5d0e\u8bfa\u4e9a": ("Noah", "noa.md"),
+    "\u83b2\u89c1\u857e\u96c5": ("Leia", "reia.md"),
+    "\u4f50\u4f2f\u7c73\u8389\u4e9a": ("Miria", "miria.md"),
+    "\u5b9d\u751f\u739b\u683c": ("Margo", "maago.md"),
+    "\u9ed1\u90e8\u5948\u53f6\u9999": ("Nanoka", "nanoka.md"),
+    "\u6a58\u96ea\u8389": ("Sherry", "sherii.md"),
+    "\u8fdc\u91ce\u6c49\u5a1c": ("Hanna", "hanna.md"),
+    "\u6cfd\u6e21\u53ef\u53ef": ("Coco", "koko.md"),
+    "\u51b0\u4e0a\u6885\u9732\u9732": ("Meruru", "meruru.md"),
+}
 
 
 @dataclass(frozen=True)
@@ -303,6 +320,7 @@ def _load_documents_for_database(
                 continue
             seen.add(resolved)
             content = _read_markdown(path)
+            content = _augment_roleplay_prompt_content(root, database, path, content)
             documents.append(
                 RoleplayKnowledgeDocument(
                     database=database,
@@ -312,6 +330,81 @@ def _load_documents_for_database(
                 )
             )
     return documents
+
+
+def _augment_roleplay_prompt_content(
+    root: Path,
+    database: str,
+    path: Path,
+    content: str,
+) -> str:
+    target_name = _target_name_from_prompt_filename(path)
+    if not target_name:
+        return content
+
+    skill_sections = _skill_sections_for_target(root, database, target_name)
+    if not skill_sections:
+        return content
+
+    return "\n\n".join(
+        [
+            content.strip(),
+            "## Skill 资料补充",
+            *skill_sections,
+        ]
+    )
+
+
+def _target_name_from_prompt_filename(path: Path) -> str | None:
+    match = re.search(r"\u5bf9(.+?)\u7684\u8ba4\u77e5", path.stem)
+    if not match:
+        return None
+    return match.group(1).strip() or None
+
+
+def _skill_sections_for_target(root: Path, database: str, target_name: str) -> list[str]:
+    reference = CHARACTER_SKILL_REFERENCES.get(target_name)
+    if reference is None:
+        return []
+
+    section_name, hiro_character_file = reference
+    roleplay_dir = root / ("ema-roleplay" if database == "ema" else "hiro-roleplay")
+    sections: list[str] = []
+    if database == "ema":
+        sections.extend(
+            _markdown_named_section(roleplay_dir / "SKILL.md", section_name, level=3)
+        )
+    else:
+        character_path = roleplay_dir / "references" / "characters" / hiro_character_file
+        if character_path.exists():
+            sections.append(_strip_frontmatter(_read_markdown(character_path)).strip())
+
+    sections.extend(
+        _markdown_named_section(
+            roleplay_dir / "references" / "cast-style-notes.md",
+            section_name,
+            level=2,
+        )
+    )
+    return [section for section in sections if section.strip()]
+
+
+def _markdown_named_section(path: Path, section_name: str, level: int) -> list[str]:
+    if not path.exists():
+        return []
+    content = _strip_frontmatter(_read_markdown(path))
+    heading_prefix = "#" * level
+    next_heading_pattern = re.compile(rf"^#{{1,{level}}}\s+", flags=re.MULTILINE)
+    heading_pattern = re.compile(
+        rf"^{re.escape(heading_prefix)}\s+{re.escape(section_name)}\s*$",
+        flags=re.MULTILINE,
+    )
+    match = heading_pattern.search(content)
+    if not match:
+        return []
+    next_match = next_heading_pattern.search(content, match.end())
+    end = next_match.start() if next_match else len(content)
+    return [content[match.start() : end].strip()]
 
 
 def _read_markdown(path: Path) -> str:
