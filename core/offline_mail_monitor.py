@@ -81,6 +81,22 @@ class OfflineMailAlert:
     body_preview: str
 
 
+@dataclass(frozen=True)
+class OfflineMailFetchResult:
+    alerts: list[OfflineMailAlert]
+    max_seen_uid: int
+    searched_uids: tuple[int, ...]
+    fetched_count: int
+
+    @property
+    def new_mail_count(self) -> int:
+        return len(self.searched_uids)
+
+    @property
+    def alert_count(self) -> int:
+        return len(self.alerts)
+
+
 def load_offline_mail_monitor_settings(config: Mapping[str, Any]) -> list[OfflineMailMonitorSettings]:
     raw_items = config.get("offline_mail_monitors", [])
     if not isinstance(raw_items, list):
@@ -187,15 +203,29 @@ def fetch_new_offline_alerts(
     settings: OfflineMailMonitorSettings,
     last_uid: int,
 ) -> tuple[list[OfflineMailAlert], int]:
+    result = fetch_new_offline_alerts_with_stats(settings, last_uid)
+    return result.alerts, result.max_seen_uid
+
+
+def fetch_new_offline_alerts_with_stats(
+    settings: OfflineMailMonitorSettings,
+    last_uid: int,
+) -> OfflineMailFetchResult:
     with _login(settings) as mailbox:
         _select_folder(mailbox, settings.folder)
         _, data = mailbox.uid("search", None, f"UID {last_uid + 1}:*")
         uids = _uids_from_search_data(data)
         if not uids:
-            return [], last_uid
+            return OfflineMailFetchResult(
+                alerts=[],
+                max_seen_uid=last_uid,
+                searched_uids=(),
+                fetched_count=0,
+            )
 
         uids = uids[-settings.max_fetch_count :]
         alerts: list[OfflineMailAlert] = []
+        fetched_count = 0
         max_seen_uid = max(last_uid, max(uids))
         for uid in uids:
             status, fetch_data = mailbox.uid("fetch", str(uid), "(RFC822)")
@@ -204,11 +234,39 @@ def fetch_new_offline_alerts(
             raw_email = _raw_email_from_fetch_data(fetch_data)
             if raw_email is None:
                 continue
+            fetched_count += 1
             message = message_from_bytes(raw_email)
             alert = _alert_from_message(uid, message, settings)
             if alert is not None:
                 alerts.append(alert)
-        return alerts, max_seen_uid
+        return OfflineMailFetchResult(
+            alerts=alerts,
+            max_seen_uid=max_seen_uid,
+            searched_uids=tuple(uids),
+            fetched_count=fetched_count,
+        )
+
+
+def mask_mailbox(value: str) -> str:
+    name, separator, domain = value.partition("@")
+    if not separator:
+        return "***" if value else ""
+    if len(name) <= 2:
+        return f"{name[:1]}***@{domain}"
+    return f"{name[:2]}***{name[-1:]}@{domain}"
+
+
+def describe_offline_mail_monitor(settings: OfflineMailMonitorSettings) -> str:
+    return (
+        f"name={settings.name} key={settings.key} "
+        f"mailbox={mask_mailbox(settings.username)} "
+        f"imap={settings.imap_host}:{settings.imap_port} folder={settings.folder} "
+        f"interval={settings.interval_seconds}s max_fetch={settings.max_fetch_count} "
+        f"target={settings.target_session} "
+        f"subject_keywords={len(settings.subject_keywords)} "
+        f"body_keywords={len(settings.body_keywords)} "
+        f"at_targets={len(settings.at_targets)}"
+    )
 
 
 def is_offline_alert_message(

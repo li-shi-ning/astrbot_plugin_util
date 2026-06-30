@@ -14,7 +14,9 @@ if str(PLUGIN_ROOT) not in sys.path:
 from core.offline_mail_monitor import (  # noqa: E402
     OfflineMailAlert,
     OfflineMailMonitorSettings,
+    describe_offline_mail_monitor,
     fetch_new_offline_alerts,
+    fetch_new_offline_alerts_with_stats,
     format_offline_mail_alert_message,
     get_current_max_uid,
     is_offline_alert_message,
@@ -169,6 +171,54 @@ def test_fetch_new_offline_alerts_filters_messages(monkeypatch):
     assert alerts[0].subject == "AstrBot bot account offline alert"
 
 
+def test_fetch_new_offline_alerts_with_stats_reports_counts(monkeypatch):
+    emails = {
+        2: make_email("normal", "hello"),
+        3: make_email("AstrBot bot account offline alert", "offline"),
+    }
+
+    class FakeIMAP:
+        def __init__(self, host, port):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return None
+
+        def login(self, username, password):
+            pass
+
+        def select(self, folder, readonly=True):
+            return "OK", []
+
+        def uid(self, command, *args):
+            if command == "search":
+                return "OK", [b"2 3"]
+            if command == "fetch":
+                return "OK", [(b"RFC822", emails[int(args[0])])]
+            raise AssertionError(command)
+
+    monkeypatch.setattr("core.offline_mail_monitor.imaplib.IMAP4_SSL", FakeIMAP)
+
+    result = fetch_new_offline_alerts_with_stats(make_settings(), last_uid=1)
+
+    assert result.max_seen_uid == 3
+    assert result.searched_uids == (2, 3)
+    assert result.new_mail_count == 2
+    assert result.fetched_count == 2
+    assert result.alert_count == 1
+
+
+def test_describe_offline_mail_monitor_masks_mailbox_and_omits_password():
+    description = describe_offline_mail_monitor(make_settings())
+
+    assert "bo***t@qq.com" in description
+    assert "auth-code" not in description
+    assert "target=li:GroupMessage:10001" in description
+
+
 def test_get_current_max_uid(monkeypatch):
     class FakeIMAP:
         def __init__(self, host, port):
@@ -254,7 +304,7 @@ async def test_plugin_check_sends_proactive_message(monkeypatch):
         return True
 
     def fake_fetch(settings, last_uid):
-        return [
+        alerts = [
             OfflineMailAlert(
                 uid=6,
                 subject="AstrBot bot account offline alert",
@@ -262,12 +312,20 @@ async def test_plugin_check_sends_proactive_message(monkeypatch):
                 date="2026-06-30T09:00:00+08:00",
                 body_preview="preview",
             )
-        ], 6
+        ]
+        return SimpleNamespace(
+            alerts=alerts,
+            max_seen_uid=6,
+            searched_uids=(6,),
+            fetched_count=1,
+            new_mail_count=1,
+            alert_count=1,
+        )
 
     def fake_save(path, state):
         saved.append(dict(state))
 
-    monkeypatch.setattr(main, "fetch_new_offline_alerts", fake_fetch)
+    monkeypatch.setattr(main, "fetch_new_offline_alerts_with_stats", fake_fetch)
     monkeypatch.setattr(main, "save_offline_mail_state", fake_save)
     plugin = util.__new__(util)
     plugin.context = SimpleNamespace(send_message=send_message)

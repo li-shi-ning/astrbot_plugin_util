@@ -84,9 +84,10 @@ try:
         send_qq_email_async,
     )
     from .core.offline_mail_monitor import (
-        fetch_new_offline_alerts,
+        fetch_new_offline_alerts_with_stats,
         format_offline_mail_alert_message,
         get_current_max_uid,
+        describe_offline_mail_monitor,
         load_offline_mail_monitor_settings,
         load_offline_mail_state,
         save_offline_mail_state,
@@ -142,9 +143,10 @@ except ImportError:
         send_qq_email_async,
     )
     from core.offline_mail_monitor import (
-        fetch_new_offline_alerts,
+        fetch_new_offline_alerts_with_stats,
         format_offline_mail_alert_message,
         get_current_max_uid,
+        describe_offline_mail_monitor,
         load_offline_mail_monitor_settings,
         load_offline_mail_state,
         save_offline_mail_state,
@@ -170,7 +172,7 @@ OFFLINE_MAIL_MONITOR_STATE_PATH = (
 ).resolve()
 
 
-@register("util", "lishinig", "私人插件", "1.6.13")
+@register("util", "lishinig", "私人插件", "1.6.14")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -462,22 +464,44 @@ class util(Star):
         self._li_reply_capture_futures: dict[str, asyncio.Future[str]] = {}
 
     async def initialize(self) -> None:
+        logger.info(
+            "[util] 邮箱下线检测端配置数量: %s",
+            len(self.offline_mail_monitor_settings),
+        )
         for settings in self.offline_mail_monitor_settings:
             if not settings.enabled:
+                logger.info(
+                    "[util] 邮箱下线检测端已禁用，跳过: %s detail=%s",
+                    settings.name,
+                    describe_offline_mail_monitor(settings),
+                )
                 continue
             if not settings.is_ready:
                 logger.warning(
-                    "[util] 邮箱下线检测端配置不完整，已跳过: %s",
+                    "[util] 邮箱下线检测端配置不完整，已跳过: %s detail=%s",
                     settings.name,
+                    describe_offline_mail_monitor(settings),
                 )
                 continue
+            logger.info(
+                "[util] 邮箱下线检测端准备启动: %s",
+                describe_offline_mail_monitor(settings),
+            )
             task = asyncio.create_task(
                 self._run_offline_mail_monitor(settings),
                 name=f"util-offline-mail-monitor-{settings.key}",
             )
             self.offline_mail_monitor_tasks.append(task)
+        logger.info(
+            "[util] 邮箱下线检测端已启动任务数: %s",
+            len(self.offline_mail_monitor_tasks),
+        )
 
     async def terminate(self) -> None:
+        logger.info(
+            "[util] 正在停止邮箱下线检测端任务: %s",
+            len(self.offline_mail_monitor_tasks),
+        )
         for task in self.offline_mail_monitor_tasks:
             task.cancel()
         if self.offline_mail_monitor_tasks:
@@ -488,7 +512,11 @@ class util(Star):
         self.offline_mail_monitor_tasks.clear()
 
     async def _run_offline_mail_monitor(self, settings) -> None:
-        logger.info("[util] 启动邮箱下线检测端: %s", settings.name)
+        logger.info(
+            "[util] 启动邮箱下线检测端: %s detail=%s",
+            settings.name,
+            describe_offline_mail_monitor(settings),
+        )
         with suppress(asyncio.CancelledError):
             while True:
                 initialized = await self._initialize_offline_mail_monitor_state(
@@ -502,14 +530,26 @@ class util(Star):
 
     async def _initialize_offline_mail_monitor_state(self, settings) -> bool:
         if settings.key in self.offline_mail_monitor_state:
+            logger.info(
+                "[util] 邮箱下线检测端已有 UID 状态: %s last_uid=%s",
+                settings.name,
+                self.offline_mail_monitor_state.get(settings.key),
+            )
             return True
+        logger.info(
+            "[util] 邮箱下线检测端初始化开始: %s detail=%s",
+            settings.name,
+            describe_offline_mail_monitor(settings),
+        )
         try:
             latest_uid = await asyncio.to_thread(get_current_max_uid, settings)
         except Exception as exc:
             logger.error(
-                "[util] 初始化邮箱下线检测端失败: %s error=%s",
+                "[util] 初始化邮箱下线检测端失败: %s detail=%s error=%s",
                 settings.name,
+                describe_offline_mail_monitor(settings),
                 exc,
+                exc_info=True,
             )
             return False
         self.offline_mail_monitor_state[settings.key] = latest_uid
@@ -526,19 +566,44 @@ class util(Star):
 
     async def _check_offline_mail_monitor(self, settings) -> None:
         last_uid = int(self.offline_mail_monitor_state.get(settings.key, 0))
+        logger.info(
+            "[util] 邮箱下线检测端轮询开始: %s last_uid=%s target=%s mailbox=%s:%s folder=%s",
+            settings.name,
+            last_uid,
+            settings.target_session,
+            settings.imap_host,
+            settings.imap_port,
+            settings.folder,
+        )
         try:
-            alerts, max_seen_uid = await asyncio.to_thread(
-                fetch_new_offline_alerts,
+            fetch_result = await asyncio.to_thread(
+                fetch_new_offline_alerts_with_stats,
                 settings,
                 last_uid,
             )
         except Exception as exc:
             logger.error(
-                "[util] 邮箱下线检测端检查失败: %s error=%s",
+                "[util] 邮箱下线检测端检查失败: %s detail=%s last_uid=%s error=%s",
                 settings.name,
+                describe_offline_mail_monitor(settings),
+                last_uid,
                 exc,
+                exc_info=True,
             )
             return
+
+        alerts = fetch_result.alerts
+        max_seen_uid = fetch_result.max_seen_uid
+        logger.info(
+            "[util] 邮箱下线检测端轮询完成: %s last_uid=%s max_seen_uid=%s new_mail=%s fetched=%s matched_alerts=%s searched_uids=%s",
+            settings.name,
+            last_uid,
+            max_seen_uid,
+            fetch_result.new_mail_count,
+            fetch_result.fetched_count,
+            fetch_result.alert_count,
+            ",".join(str(uid) for uid in fetch_result.searched_uids[-10:]) or "-",
+        )
 
         if max_seen_uid > last_uid:
             self.offline_mail_monitor_state[settings.key] = max_seen_uid
@@ -546,14 +611,37 @@ class util(Star):
                 OFFLINE_MAIL_MONITOR_STATE_PATH,
                 self.offline_mail_monitor_state,
             )
+            logger.info(
+                "[util] 邮箱下线检测端 UID 状态已更新: %s old_uid=%s new_uid=%s state_path=%s",
+                settings.name,
+                last_uid,
+                max_seen_uid,
+                OFFLINE_MAIL_MONITOR_STATE_PATH,
+            )
 
         for alert in alerts:
+            logger.info(
+                "[util] 邮箱下线检测端命中告警邮件: %s uid=%s subject=%s from=%s date=%s",
+                settings.name,
+                alert.uid,
+                alert.subject,
+                alert.from_addr,
+                alert.date,
+            )
             message = format_offline_mail_alert_message(alert, settings)
             components = self._build_offline_mail_alert_components(
                 message,
                 settings.at_targets,
             )
             try:
+                logger.info(
+                    "[util] 邮箱下线检测端准备主动发送: %s uid=%s target=%s components=%s message_preview=%s",
+                    settings.name,
+                    alert.uid,
+                    settings.target_session,
+                    len(components),
+                    message[:200].replace("\n", "\\n"),
+                )
                 sent = await self.context.send_message(
                     settings.target_session,
                     MessageChain(components),
@@ -564,6 +652,7 @@ class util(Star):
                     settings.name,
                     alert.uid,
                     exc,
+                    exc_info=True,
                 )
                 continue
             if sent:
