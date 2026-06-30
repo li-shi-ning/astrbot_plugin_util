@@ -6,9 +6,7 @@ import re
 import traceback
 import uuid
 from collections.abc import Mapping
-from contextlib import suppress
 from dataclasses import replace
-from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -84,15 +82,6 @@ try:
         is_bot_offline_notice,
         send_qq_email_async,
     )
-    from .core.offline_mail_monitor import (
-        fetch_new_offline_alerts_with_stats,
-        format_offline_mail_alert_message,
-        get_current_max_uid,
-        describe_offline_mail_monitor,
-        load_offline_mail_monitor_settings,
-        load_offline_mail_state,
-        save_offline_mail_state,
-    )
 except ImportError:
     from core.Filter import register_pack_type
     from core.group_history import (
@@ -143,15 +132,6 @@ except ImportError:
         is_bot_offline_notice,
         send_qq_email_async,
     )
-    from core.offline_mail_monitor import (
-        fetch_new_offline_alerts_with_stats,
-        format_offline_mail_alert_message,
-        get_current_max_uid,
-        describe_offline_mail_monitor,
-        load_offline_mail_monitor_settings,
-        load_offline_mail_state,
-        save_offline_mail_state,
-    )
 
 
 SUPPORTED_KEYWORD_VOICE_SUFFIXES = {
@@ -168,12 +148,7 @@ LOVE_MESSAGES_PATH = (PLUGIN_ROOT / "core" / "love_messages.txt").resolve()
 PLUGIN_DATA_DIR = (Path(get_astrbot_plugin_data_path()) / "astrbot_plugin_util").resolve()
 NETEASE_LOGIN_DATA_DIR = (PLUGIN_DATA_DIR / "netease_login").resolve()
 NETEASE_COOKIE_PATH = (NETEASE_LOGIN_DATA_DIR / "cookie.json").resolve()
-OFFLINE_MAIL_MONITOR_STATE_PATH = (
-    PLUGIN_DATA_DIR / "offline_mail_monitor_state.json"
-).resolve()
-
-
-@register("util", "lishinig", "私人插件", "1.6.15")
+@register("util", "lishinig", "私人插件", "1.6.16")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -445,11 +420,6 @@ class util(Star):
         self.offline_email_alert_config = build_offline_email_alert_config(
             offline_email_alert_config
         )
-        self.offline_mail_monitor_settings = load_offline_mail_monitor_settings(config)
-        self.offline_mail_monitor_state = load_offline_mail_state(
-            OFFLINE_MAIL_MONITOR_STATE_PATH
-        )
-        self.offline_mail_monitor_tasks: list[asyncio.Task] = []
         self.music_search_config = build_music_config(music_search_config)
         persisted_music_cookie = load_persisted_music_cookie(NETEASE_COOKIE_PATH)
         if persisted_music_cookie:
@@ -463,255 +433,6 @@ class util(Star):
         self.love_messages = load_love_messages(LOVE_MESSAGES_PATH)
         self._li_takeover_next_turn_keys: set[str] = set()
         self._li_reply_capture_futures: dict[str, asyncio.Future[str]] = {}
-
-    async def initialize(self) -> None:
-        logger.info(
-            "[util] 邮箱下线检测端配置数量: %s",
-            len(self.offline_mail_monitor_settings),
-        )
-        for settings in self.offline_mail_monitor_settings:
-            if not settings.enabled:
-                logger.info(
-                    "[util] 邮箱下线检测端已禁用，跳过: %s detail=%s",
-                    settings.name,
-                    describe_offline_mail_monitor(settings),
-                )
-                continue
-            if not settings.is_ready:
-                logger.warning(
-                    "[util] 邮箱下线检测端配置不完整，已跳过: %s detail=%s",
-                    settings.name,
-                    describe_offline_mail_monitor(settings),
-                )
-                continue
-            logger.info(
-                "[util] 邮箱下线检测端准备启动: %s",
-                describe_offline_mail_monitor(settings),
-            )
-            task = asyncio.create_task(
-                self._run_offline_mail_monitor(settings),
-                name=f"util-offline-mail-monitor-{settings.key}",
-            )
-            self.offline_mail_monitor_tasks.append(task)
-        logger.info(
-            "[util] 邮箱下线检测端已启动任务数: %s",
-            len(self.offline_mail_monitor_tasks),
-        )
-
-    async def terminate(self) -> None:
-        logger.info(
-            "[util] 正在停止邮箱下线检测端任务: %s",
-            len(self.offline_mail_monitor_tasks),
-        )
-        for task in self.offline_mail_monitor_tasks:
-            task.cancel()
-        if self.offline_mail_monitor_tasks:
-            await asyncio.gather(
-                *self.offline_mail_monitor_tasks,
-                return_exceptions=True,
-            )
-        self.offline_mail_monitor_tasks.clear()
-
-    async def _run_offline_mail_monitor(self, settings) -> None:
-        logger.info(
-            "[util] 启动邮箱下线检测端: %s detail=%s",
-            settings.name,
-            describe_offline_mail_monitor(settings),
-        )
-        with suppress(asyncio.CancelledError):
-            while True:
-                initialized = await self._initialize_offline_mail_monitor_state(
-                    settings
-                )
-                if not initialized:
-                    await self._sleep_before_next_offline_mail_monitor_check(
-                        settings,
-                        "初始化失败",
-                    )
-                    continue
-                await self._check_offline_mail_monitor(settings)
-                await self._sleep_before_next_offline_mail_monitor_check(
-                    settings,
-                    "本轮检查完成",
-                )
-
-    async def _sleep_before_next_offline_mail_monitor_check(
-        self,
-        settings,
-        reason: str,
-    ) -> None:
-        next_check_at = datetime.now() + timedelta(
-            seconds=settings.interval_seconds
-        )
-        logger.info(
-            "[util] 邮箱下线检测端等待下次检查: %s reason=%s wait=%ss next_check_at=%s",
-            settings.name,
-            reason,
-            settings.interval_seconds,
-            next_check_at.strftime("%Y-%m-%d %H:%M:%S"),
-        )
-        await asyncio.sleep(settings.interval_seconds)
-
-    async def _initialize_offline_mail_monitor_state(self, settings) -> bool:
-        if settings.key in self.offline_mail_monitor_state:
-            logger.info(
-                "[util] 邮箱下线检测端已有 UID 状态: %s last_uid=%s",
-                settings.name,
-                self.offline_mail_monitor_state.get(settings.key),
-            )
-            return True
-        logger.info(
-            "[util] 邮箱下线检测端初始化开始: %s detail=%s",
-            settings.name,
-            describe_offline_mail_monitor(settings),
-        )
-        try:
-            latest_uid = await asyncio.to_thread(get_current_max_uid, settings)
-        except Exception as exc:
-            logger.error(
-                "[util] 初始化邮箱下线检测端失败: %s detail=%s error=%s",
-                settings.name,
-                describe_offline_mail_monitor(settings),
-                exc,
-                exc_info=True,
-            )
-            return False
-        self.offline_mail_monitor_state[settings.key] = latest_uid
-        save_offline_mail_state(
-            OFFLINE_MAIL_MONITOR_STATE_PATH,
-            self.offline_mail_monitor_state,
-        )
-        logger.info(
-            "[util] 邮箱下线检测端已记录当前最新 UID: %s uid=%s",
-            settings.name,
-            latest_uid,
-        )
-        return True
-
-    async def _check_offline_mail_monitor(self, settings) -> None:
-        last_uid = int(self.offline_mail_monitor_state.get(settings.key, 0))
-        logger.info(
-            "[util] 邮箱下线检测端轮询开始: %s last_uid=%s target=%s mailbox=%s:%s folder=%s",
-            settings.name,
-            last_uid,
-            settings.target_session,
-            settings.imap_host,
-            settings.imap_port,
-            settings.folder,
-        )
-        try:
-            fetch_result = await asyncio.to_thread(
-                fetch_new_offline_alerts_with_stats,
-                settings,
-                last_uid,
-            )
-        except Exception as exc:
-            logger.error(
-                "[util] 邮箱下线检测端检查失败: %s detail=%s last_uid=%s error=%s",
-                settings.name,
-                describe_offline_mail_monitor(settings),
-                last_uid,
-                exc,
-                exc_info=True,
-            )
-            return
-
-        alerts = fetch_result.alerts
-        max_seen_uid = fetch_result.max_seen_uid
-        logger.info(
-            "[util] 邮箱下线检测端轮询完成: %s last_uid=%s max_seen_uid=%s new_mail=%s fetched=%s matched_alerts=%s searched_uids=%s",
-            settings.name,
-            last_uid,
-            max_seen_uid,
-            fetch_result.new_mail_count,
-            fetch_result.fetched_count,
-            fetch_result.alert_count,
-            ",".join(str(uid) for uid in fetch_result.searched_uids[-10:]) or "-",
-        )
-
-        if max_seen_uid > last_uid:
-            self.offline_mail_monitor_state[settings.key] = max_seen_uid
-            save_offline_mail_state(
-                OFFLINE_MAIL_MONITOR_STATE_PATH,
-                self.offline_mail_monitor_state,
-            )
-            logger.info(
-                "[util] 邮箱下线检测端 UID 状态已更新: %s old_uid=%s new_uid=%s state_path=%s",
-                settings.name,
-                last_uid,
-                max_seen_uid,
-                OFFLINE_MAIL_MONITOR_STATE_PATH,
-            )
-
-        for alert in alerts:
-            logger.info(
-                "[util] 邮箱下线检测端命中告警邮件: %s uid=%s subject=%s from=%s date=%s",
-                settings.name,
-                alert.uid,
-                alert.subject,
-                alert.from_addr,
-                alert.date,
-            )
-            message = format_offline_mail_alert_message(alert, settings)
-            components = self._build_offline_mail_alert_components(
-                message,
-                settings.at_targets,
-            )
-            try:
-                logger.info(
-                    "[util] 邮箱下线检测端准备主动发送: %s uid=%s target=%s components=%s message_preview=%s",
-                    settings.name,
-                    alert.uid,
-                    settings.target_session,
-                    len(components),
-                    message[:200].replace("\n", "\\n"),
-                )
-                sent = await self.context.send_message(
-                    settings.target_session,
-                    MessageChain(components),
-                )
-            except Exception as exc:
-                logger.error(
-                    "[util] 邮箱下线检测端主动发送失败: %s uid=%s error=%s",
-                    settings.name,
-                    alert.uid,
-                    exc,
-                    exc_info=True,
-                )
-                continue
-            if sent:
-                logger.info(
-                    "[util] 邮箱下线检测端已发送主动提醒: %s uid=%s target=%s",
-                    settings.name,
-                    alert.uid,
-                    settings.target_session,
-                )
-            else:
-                logger.warning(
-                    "[util] 邮箱下线检测端未找到目标机器人: %s target=%s",
-                    settings.name,
-                    settings.target_session,
-                )
-
-    @staticmethod
-    def _build_offline_mail_alert_components(
-        message: str,
-        at_targets: tuple[str, ...],
-    ) -> list:
-        components = []
-        for target in at_targets:
-            normalized_target = str(target).strip()
-            if not normalized_target:
-                continue
-            if normalized_target.lower() == "all":
-                components.append(Comp.AtAll())
-            else:
-                components.append(Comp.At(qq=normalized_target))
-        if components:
-            components.append(Comp.Plain("\n" + message))
-        else:
-            components.append(Comp.Plain(message))
-        return components
 
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP, priority=10000)
     @filter.event_message_type(filter.EventMessageType.ALL, priority=10000)

@@ -1,3 +1,8 @@
+# v1.6.16
+
+- 移除 `offline_mail_monitors` 邮箱下线检测端、IMAP 轮询逻辑、检测端配置项和对应测试。
+- 保留 `offline_email_alert`：AIOCQHTTP 上报账号下线 notice 时仍会自动发送告警邮件。
+
 # v1.6.15
 
 - 邮箱下线检测端新增 `imap_timeout_seconds` 配置，默认 20 秒，避免 IMAP 网络异常时初始化长时间卡住。

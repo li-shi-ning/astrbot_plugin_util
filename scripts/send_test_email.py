@@ -79,7 +79,7 @@ def main() -> None:
     parser.add_argument(
         "--offline-alert",
         action="store_true",
-        help="Send an email that matches offline_mail_monitors default keywords.",
+        help="Send an email formatted like an AstrBot bot offline alert.",
     )
     args = parser.parse_args()
 
