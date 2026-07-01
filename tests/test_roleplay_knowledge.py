@@ -155,6 +155,29 @@ def test_roleplay_knowledge_search_tolerates_extra_broad_terms(tmp_path):
     assert any("\u8bfa\u4e9a" in result.document.content for result in results)
 
 
+def test_roleplay_knowledge_search_report_counts_candidates(tmp_path):
+    knowledge_base = RoleplayKnowledgeBase.from_root(
+        ROLEPLAY_KNOWLEDGE_ROOT,
+        tmp_path / "roleplay_knowledge.sqlite3",
+    )
+
+    report = knowledge_base.search_with_report(
+        "hiro",
+        "\u8bfa\u4e9a \u57ce\u5d0e \u9b54\u5973\u5c9b",
+        limit=3,
+        max_chars_per_result=500,
+    )
+
+    assert report.terms == [
+        "\u8bfa\u4e9a",
+        "\u57ce\u5d0e",
+        "\u9b54\u5973\u5c9b",
+    ]
+    assert report.candidate_count >= len(report.results)
+    assert report.scored_count >= len(report.results)
+    assert report.excluded_count == 0
+
+
 @pytest.mark.asyncio
 async def test_roleplay_knowledge_tool_uses_ema_for_ni(tmp_path):
     plugin = util.__new__(util)

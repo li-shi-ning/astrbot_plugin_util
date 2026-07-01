@@ -56,6 +56,15 @@ class RoleplayKnowledgeSearchResult:
     snippet: str
 
 
+@dataclass(frozen=True)
+class RoleplayKnowledgeSearchReport:
+    results: list[RoleplayKnowledgeSearchResult]
+    terms: list[str]
+    candidate_count: int
+    excluded_count: int
+    scored_count: int
+
+
 def load_roleplay_knowledge_config(config: Mapping[str, Any]) -> RoleplayKnowledgeConfig:
     section: Mapping[str, Any] = config
     if "enable_roleplay_knowledge_tool" not in section:
@@ -162,9 +171,31 @@ class RoleplayKnowledgeBase:
         max_chars_per_result: int,
         exclude_sources: set[str] | None = None,
     ) -> list[RoleplayKnowledgeSearchResult]:
+        return self.search_with_report(
+            database=database,
+            query=query,
+            limit=limit,
+            max_chars_per_result=max_chars_per_result,
+            exclude_sources=exclude_sources,
+        ).results
+
+    def search_with_report(
+        self,
+        database: str,
+        query: str,
+        limit: int,
+        max_chars_per_result: int,
+        exclude_sources: set[str] | None = None,
+    ) -> RoleplayKnowledgeSearchReport:
         query = str(query or "").strip()
         if not query:
-            return []
+            return RoleplayKnowledgeSearchReport(
+                results=[],
+                terms=[],
+                candidate_count=0,
+                excluded_count=0,
+                scored_count=0,
+            )
 
         terms = _query_terms(query)
         sql, parameters = _search_sql(database, terms)
@@ -172,9 +203,12 @@ class RoleplayKnowledgeBase:
         with self._connect() as connection:
             rows = connection.execute(sql, parameters).fetchall()
 
+        excluded_count = 0
+        scored_count = 0
         for row in rows:
             source = str(row["source"])
             if exclude_sources and source in exclude_sources:
+                excluded_count += 1
                 continue
             document = RoleplayKnowledgeDocument(
                 database=str(row["database"]),
@@ -185,6 +219,7 @@ class RoleplayKnowledgeBase:
             score = _score_document(document, terms)
             if score <= 0:
                 continue
+            scored_count += 1
             results.append(
                 RoleplayKnowledgeSearchResult(
                     document=document,
@@ -201,7 +236,13 @@ class RoleplayKnowledgeBase:
             ),
             reverse=True,
         )
-        return results[: max(1, limit)]
+        return RoleplayKnowledgeSearchReport(
+            results=results[: max(1, limit)],
+            terms=terms,
+            candidate_count=len(rows),
+            excluded_count=excluded_count,
+            scored_count=scored_count,
+        )
 
     def _ensure_schema(self) -> None:
         with self._connect() as connection:

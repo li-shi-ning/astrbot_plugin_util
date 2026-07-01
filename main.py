@@ -197,7 +197,7 @@ ROLEPLAY_KNOWLEDGE_DB_RELATIVE_PATH = (
     Path("roleplay_knowledge") / ROLEPLAY_KNOWLEDGE_DB_FILENAME
 )
 ROLEPLAY_KNOWLEDGE_DB_PATH = ROLEPLAY_KNOWLEDGE_DB_RELATIVE_PATH
-@register("util", "lishinig", "私人插件", "1.6.24")
+@register("util", "lishinig", "私人插件", "1.6.25")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -474,6 +474,15 @@ class util(Star):
             ROLEPLAY_KNOWLEDGE_ROOT,
             ROLEPLAY_KNOWLEDGE_DB_RELATIVE_PATH,
             base_dir=PLUGIN_ROOT,
+        )
+        logger.info(
+            "[util] roleplay knowledge DB ready: "
+            f"enabled={self.roleplay_knowledge_config.enabled}, "
+            f"db_path={self.roleplay_knowledge_base.db_path}, "
+            f"source_root={ROLEPLAY_KNOWLEDGE_ROOT}, "
+            f"total={self.roleplay_knowledge_base.count()}, "
+            f"ema={self.roleplay_knowledge_base.count('ema')}, "
+            f"hiro={self.roleplay_knowledge_base.count('hiro')}"
         )
         self._roleplay_knowledge_turn_index = 0
         self._roleplay_knowledge_recent_sources: dict[
@@ -1957,12 +1966,26 @@ class util(Star):
         )
         scope_key = self._roleplay_knowledge_scope_key(event, database)
         excluded_sources = self._recent_roleplay_knowledge_sources(scope_key)
-        results = self.roleplay_knowledge_base.search(
+        report = self.roleplay_knowledge_base.search_with_report(
             database=database,
             query=query,
             limit=safe_limit,
             max_chars_per_result=self.roleplay_knowledge_config.max_chars_per_result,
             exclude_sources=excluded_sources,
+        )
+        results = report.results
+        logger.info(
+            "[util] roleplay knowledge search: "
+            f"database={database}, "
+            f"query={query!r}, "
+            f"terms={report.terms}, "
+            f"limit={safe_limit}, "
+            f"db_count={self.roleplay_knowledge_base.count(database)}, "
+            f"candidate_count={report.candidate_count}, "
+            f"excluded_count={report.excluded_count}, "
+            f"scored_count={report.scored_count}, "
+            f"returned_count={len(results)}, "
+            f"returned_sources={[result.document.source for result in results]}"
         )
         self._record_roleplay_knowledge_sources(scope_key, results)
         return format_roleplay_search_results(database, query, results)
