@@ -57,7 +57,10 @@ class RoleplayKnowledgeSearchResult:
 
 
 def load_roleplay_knowledge_config(config: Mapping[str, Any]) -> RoleplayKnowledgeConfig:
-    section = config.get("roleplay_knowledge", {})
+    section: Mapping[str, Any] = config
+    if "enable_roleplay_knowledge_tool" not in section:
+        nested_section = section.get("roleplay_knowledge", {})
+        section = nested_section if isinstance(nested_section, Mapping) else {}
     if not isinstance(section, Mapping):
         section = {}
     return RoleplayKnowledgeConfig(

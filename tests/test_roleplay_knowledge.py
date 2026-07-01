@@ -47,6 +47,22 @@ def test_roleplay_knowledge_config_bounds_values():
     assert config.deduplicate_turns == 50
 
 
+def test_roleplay_knowledge_config_accepts_section_values():
+    config = load_roleplay_knowledge_config(
+        {
+            "enable_roleplay_knowledge_tool": True,
+            "max_results": 3,
+            "max_chars_per_result": 1200,
+            "deduplicate_turns": 2,
+        }
+    )
+
+    assert config.enabled is True
+    assert config.max_results == 3
+    assert config.max_chars_per_result == 1200
+    assert config.deduplicate_turns == 2
+
+
 def test_roleplay_knowledge_selects_database_by_platform_id():
     assert select_roleplay_database("ni") == "ema"
     assert select_roleplay_database("NI") == "ema"
