@@ -444,10 +444,13 @@ def _strip_frontmatter(content: str) -> str:
 def _search_sql(database: str, terms: list[str]) -> tuple[str, list[str]]:
     clauses = ["database = ?"]
     parameters = [database]
+    term_clauses: list[str] = []
     for term in terms:
-        clauses.append("(title LIKE ? OR source LIKE ? OR content LIKE ?)")
+        term_clauses.append("(title LIKE ? OR source LIKE ? OR content LIKE ?)")
         like_term = f"%{term}%"
         parameters.extend([like_term, like_term, like_term])
+    if term_clauses:
+        clauses.append("(" + " OR ".join(term_clauses) + ")")
     return (
         "SELECT database, title, source, content FROM documents WHERE "
         + " AND ".join(clauses),
@@ -485,6 +488,8 @@ def _score_document(document: RoleplayKnowledgeDocument, terms: list[str]) -> in
             continue
         title_hits = title.count(term)
         content_hits = haystack.count(term)
+        if content_hits:
+            score += 100
         score += title_hits * 20 + content_hits
     return score
 

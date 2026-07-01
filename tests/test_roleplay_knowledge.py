@@ -137,6 +137,24 @@ def test_roleplay_knowledge_searches_split_databases(tmp_path):
     assert all(result.document.database == "hiro" for result in hiro_results)
 
 
+def test_roleplay_knowledge_search_tolerates_extra_broad_terms(tmp_path):
+    knowledge_base = RoleplayKnowledgeBase.from_root(
+        ROLEPLAY_KNOWLEDGE_ROOT,
+        tmp_path / "roleplay_knowledge.sqlite3",
+    )
+
+    results = knowledge_base.search(
+        "hiro",
+        "\u8bfa\u4e9a \u57ce\u5d0e \u9b54\u5973\u5c9b",
+        limit=3,
+        max_chars_per_result=500,
+    )
+
+    assert results
+    assert "\u8bfa\u4e9a" in results[0].document.content
+    assert any("\u8bfa\u4e9a" in result.document.content for result in results)
+
+
 @pytest.mark.asyncio
 async def test_roleplay_knowledge_tool_uses_ema_for_ni(tmp_path):
     plugin = util.__new__(util)
