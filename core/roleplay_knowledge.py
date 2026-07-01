@@ -94,6 +94,10 @@ class RoleplayKnowledgeBase:
                 self.db_path = Path(base_dir) / self.db_path
             self.db_path = self.db_path.resolve()
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.last_rebuild_document_count = 0
+        self.last_rebuild_skipped = False
+        self.last_source_exists = False
+        self.last_source_markdown_count = 0
         self._ensure_schema()
 
     @classmethod
@@ -115,9 +119,16 @@ class RoleplayKnowledgeBase:
         knowledge_base.rebuild_from_root(root)
         return knowledge_base
 
-    def rebuild_from_root(self, root: Path) -> None:
+    def rebuild_from_root(self, root: Path) -> int:
         root = root.resolve()
+        self.last_source_exists = root.exists()
+        self.last_source_markdown_count = _count_markdown_files(root)
         documents = _load_documents(root)
+        self.last_rebuild_document_count = len(documents)
+        self.last_rebuild_skipped = not documents
+        if not documents:
+            return 0
+
         with self._connect() as connection:
             connection.execute("DELETE FROM documents")
             connection.executemany(
@@ -151,6 +162,7 @@ class RoleplayKnowledgeBase:
                 """,
                 (str(root),),
             )
+        return len(documents)
 
     def count(self, database: str | None = None) -> int:
         with self._connect() as connection:
@@ -319,6 +331,14 @@ def _load_documents(root: Path) -> list[RoleplayKnowledgeDocument]:
     documents.extend(_load_documents_for_database(root, "ema", _ema_roots(root)))
     documents.extend(_load_documents_for_database(root, "hiro", _hiro_roots(root)))
     return documents
+
+
+def _count_markdown_files(root: Path) -> int:
+    if not root.exists():
+        return 0
+    if root.is_file():
+        return 1 if root.suffix.lower() == ".md" else 0
+    return sum(1 for path in root.rglob("*.md") if path.is_file())
 
 
 def _ema_roots(root: Path) -> tuple[Path, ...]:

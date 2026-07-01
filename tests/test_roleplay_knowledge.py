@@ -120,6 +120,29 @@ def test_roleplay_knowledge_builds_sqlite_database(tmp_path):
     assert "## Canonical Identity" in hiro_augmented
 
 
+def test_roleplay_knowledge_keeps_existing_db_when_source_is_missing(tmp_path):
+    db_path = tmp_path / "roleplay_knowledge.sqlite3"
+    knowledge_base = RoleplayKnowledgeBase.from_root(
+        ROLEPLAY_KNOWLEDGE_ROOT,
+        db_path,
+    )
+
+    assert knowledge_base.count() == 26
+
+    reloaded_base = RoleplayKnowledgeBase.from_root(
+        tmp_path / "missing-source",
+        db_path,
+    )
+
+    assert reloaded_base.last_source_exists is False
+    assert reloaded_base.last_source_markdown_count == 0
+    assert reloaded_base.last_rebuild_document_count == 0
+    assert reloaded_base.last_rebuild_skipped is True
+    assert reloaded_base.count() == 26
+    assert reloaded_base.count("ema") == 13
+    assert reloaded_base.count("hiro") == 13
+
+
 def test_roleplay_knowledge_searches_split_databases(tmp_path):
     knowledge_base = RoleplayKnowledgeBase.from_root(
         ROLEPLAY_KNOWLEDGE_ROOT,

@@ -197,7 +197,7 @@ ROLEPLAY_KNOWLEDGE_DB_RELATIVE_PATH = (
     Path("roleplay_knowledge") / ROLEPLAY_KNOWLEDGE_DB_FILENAME
 )
 ROLEPLAY_KNOWLEDGE_DB_PATH = ROLEPLAY_KNOWLEDGE_DB_RELATIVE_PATH
-@register("util", "lishinig", "私人插件", "1.6.25")
+@register("util", "lishinig", "私人插件", "1.6.26")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -475,11 +475,20 @@ class util(Star):
             ROLEPLAY_KNOWLEDGE_DB_RELATIVE_PATH,
             base_dir=PLUGIN_ROOT,
         )
+        roleplay_db_path = self.roleplay_knowledge_base.db_path
+        roleplay_db_exists = roleplay_db_path.exists()
+        roleplay_db_size = roleplay_db_path.stat().st_size if roleplay_db_exists else 0
         logger.info(
             "[util] roleplay knowledge DB ready: "
             f"enabled={self.roleplay_knowledge_config.enabled}, "
-            f"db_path={self.roleplay_knowledge_base.db_path}, "
+            f"db_path={roleplay_db_path}, "
+            f"db_exists={roleplay_db_exists}, "
+            f"db_size={roleplay_db_size}, "
             f"source_root={ROLEPLAY_KNOWLEDGE_ROOT}, "
+            f"source_exists={self.roleplay_knowledge_base.last_source_exists}, "
+            f"source_markdown_count={self.roleplay_knowledge_base.last_source_markdown_count}, "
+            f"rebuild_loaded={self.roleplay_knowledge_base.last_rebuild_document_count}, "
+            f"rebuild_skipped={self.roleplay_knowledge_base.last_rebuild_skipped}, "
             f"total={self.roleplay_knowledge_base.count()}, "
             f"ema={self.roleplay_knowledge_base.count('ema')}, "
             f"hiro={self.roleplay_knowledge_base.count('hiro')}"
