@@ -402,43 +402,6 @@
       }
     }
   },
-  "mcd_mcp": {
-    "description": "麦当劳 MCP 指令",
-    "type": "object",
-    "hint": "为管理员提供 /麦 指令组，调用除下单外的麦当劳 MCP 接口。Token 直接填写在配置项中，日志不会输出 token 内容。",
-    "items": {
-      "enable_mcd_mcp_commands": {
-        "description": "是否启用 /麦 指令组。",
-        "type": "bool",
-        "default": true,
-        "hint": "true / false"
-      },
-      "url": {
-        "description": "麦当劳 MCP 服务地址。",
-        "type": "string",
-        "default": "https://mcp.mcd.cn/mcp-servers/mcd-mcp",
-        "hint": "https://mcp.mcd.cn/mcp-servers/mcd-mcp"
-      },
-      "token": {
-        "description": "麦当劳 MCP Bearer token。",
-        "type": "text",
-        "default": "",
-        "hint": "直接填写 token 内容，不需要 Bearer 前缀"
-      },
-      "timeout_seconds": {
-        "description": "MCP 请求超时时间，范围 1-120 秒。",
-        "type": "int",
-        "default": 30,
-        "hint": "30"
-      },
-      "max_response_chars": {
-        "description": "单次指令回复的最大字符数，范围 500-12000。",
-        "type": "int",
-        "default": 3500,
-        "hint": "3500"
-      }
-    }
-  },
   "debug_logging": {
     "description": "调试日志",
     "type": "object",
