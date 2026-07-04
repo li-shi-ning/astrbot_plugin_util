@@ -29,6 +29,7 @@ from astrbot.core.platform.message_type import MessageType
 from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
     AiocqhttpMessageEvent,
 )
+from astrbot.core.star.filter.command import GreedyStr
 from astrbot.core.star.star import star_map
 from astrbot.core.star.star_handler import EventType, star_handlers_registry
 from astrbot.core.utils.astrbot_path import get_astrbot_plugin_data_path
@@ -51,6 +52,20 @@ try:
         choose_love_message,
         format_love_message,
         load_love_messages,
+    )
+    from .core.mcd_mcp import (
+        MCD_MCP_ALLOWED_TOOLS,
+        McdMcpClient,
+        McdMcpError,
+        ensure_mcd_mcp_tool_allowed,
+        format_mcd_mcp_result,
+        format_mcd_mcp_tools,
+        format_mcd_usage,
+        load_mcd_mcp_config,
+        parse_mcd_human_arguments,
+        parse_mcd_mcp_arguments,
+        parse_mcd_points_category,
+        parse_mcd_price_arguments,
     )
     from .core.music_search import (
         MUSIC_AUDIO_UNAVAILABLE_MESSAGE,
@@ -122,6 +137,20 @@ except ImportError:
         choose_love_message,
         format_love_message,
         load_love_messages,
+    )
+    from core.mcd_mcp import (
+        MCD_MCP_ALLOWED_TOOLS,
+        McdMcpClient,
+        McdMcpError,
+        ensure_mcd_mcp_tool_allowed,
+        format_mcd_mcp_result,
+        format_mcd_mcp_tools,
+        format_mcd_usage,
+        load_mcd_mcp_config,
+        parse_mcd_human_arguments,
+        parse_mcd_mcp_arguments,
+        parse_mcd_points_category,
+        parse_mcd_price_arguments,
     )
     from core.music_search import (
         MUSIC_AUDIO_UNAVAILABLE_MESSAGE,
@@ -197,7 +226,7 @@ ROLEPLAY_KNOWLEDGE_DB_RELATIVE_PATH = (
     Path("roleplay_knowledge") / ROLEPLAY_KNOWLEDGE_DB_FILENAME
 )
 ROLEPLAY_KNOWLEDGE_DB_PATH = ROLEPLAY_KNOWLEDGE_DB_RELATIVE_PATH
-@register("util", "lishinig", "私人插件", "1.6.26")
+@register("util", "lishinig", "私人插件", "1.6.27")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -376,6 +405,7 @@ class util(Star):
         li_config = config_section("li_handoff")
         group_history_config = config_section("group_history")
         music_search_config = config_section("music_search")
+        mcd_mcp_config = config_section("mcd_mcp")
         offline_email_alert_config = config_section("offline_email_alert")
         roleplay_knowledge_config = config_section("roleplay_knowledge")
 
@@ -507,6 +537,18 @@ class util(Star):
         self.offline_webhook_receive_rules = load_offline_webhook_receive_rules(config)
         self._offline_webhook_runner: web.AppRunner | None = None
         self.music_search_config = build_music_config(music_search_config)
+        self.mcd_mcp_config = load_mcd_mcp_config(mcd_mcp_config)
+        self.mcd_mcp_client = McdMcpClient(
+            self.mcd_mcp_config,
+            self.mcd_mcp_config.token,
+        )
+        logger.info(
+            "[util] mcd mcp commands: "
+            f"enabled={self.mcd_mcp_config.enabled}, "
+            f"url={self.mcd_mcp_config.url}, "
+            f"token_configured={bool(self.mcd_mcp_config.token)}, "
+            f"allowed_tools={len(MCD_MCP_ALLOWED_TOOLS)}"
+        )
         persisted_music_cookie = load_persisted_music_cookie(NETEASE_COOKIE_PATH)
         if persisted_music_cookie:
             self.music_search_config = replace(
@@ -1051,6 +1093,239 @@ class util(Star):
     def _remove_music_selection(self, session_id: str, cache_key: str) -> None:
         self.music_pending_selections.pop(session_id, None)
         self.music_song_cache.pop(cache_key, None)
+
+    @filter.command_group("麦")
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    def mcd(self):
+        pass
+
+    @mcd.command("帮助")
+    async def mcd_help_command(self, event: AstrMessageEvent):
+        """显示麦当劳 MCP 管理员指令帮助。"""
+        yield event.plain_result(format_mcd_mcp_tools())
+
+    @mcd.command("工具")
+    async def mcd_tools_command(self, event: AstrMessageEvent):
+        """列出可用的非下单麦当劳 MCP 工具。"""
+        yield event.plain_result(format_mcd_mcp_tools())
+
+    @mcd.command("说明")
+    async def mcd_tool_schema_command(self, event: AstrMessageEvent, tool_name: str = ""):
+        """查看指定麦当劳 MCP 工具的参数说明。"""
+        try:
+            tool_name = ensure_mcd_mcp_tool_allowed(tool_name)
+            text = await self._mcd_mcp_tool_schema(tool_name)
+        except McdMcpError as exc:
+            text = str(exc)
+        yield event.plain_result(text)
+
+    @mcd.command("原始")
+    async def mcd_raw_command(
+        self,
+        event: AstrMessageEvent,
+        tool_name: str,
+        payload: GreedyStr,
+    ):
+        """使用 key=value 兜底调用指定麦当劳 MCP 非下单工具。"""
+        args = parse_mcd_human_arguments(payload)
+        yield event.plain_result(await self._run_mcd_mcp_tool(tool_name, args))
+
+    @mcd.command("时间")
+    async def mcd_time_command(self, event: AstrMessageEvent):
+        yield event.plain_result(await self._run_mcd_mcp_tool("now-time-info", {}))
+
+    @mcd.command("活动")
+    async def mcd_campaign_command(self, event: AstrMessageEvent):
+        yield event.plain_result(await self._run_mcd_mcp_tool("campaign-calendar", {}))
+
+    @mcd.command("活动日期")
+    async def mcd_campaign_date_command(self, event: AstrMessageEvent, date: str):
+        yield event.plain_result(
+            await self._run_mcd_mcp_tool(
+                "campaign-calendar",
+                {"specifiedDate": date},
+            )
+        )
+
+    @mcd.command("营养")
+    async def mcd_nutrition_command(self, event: AstrMessageEvent):
+        yield event.plain_result(await self._run_mcd_mcp_tool("list-nutrition-foods", {}))
+
+    @mcd.command("可领券")
+    async def mcd_available_coupons_human_command(self, event: AstrMessageEvent):
+        yield event.plain_result(await self._run_mcd_mcp_tool("available-coupons", {}))
+
+    @mcd.command("领券")
+    async def mcd_auto_bind_coupons_human_command(self, event: AstrMessageEvent):
+        yield event.plain_result(await self._run_mcd_mcp_tool("auto-bind-coupons", {}))
+
+    @mcd.command("我的券")
+    async def mcd_my_coupons_human_command(
+        self, event: AstrMessageEvent, payload: GreedyStr
+    ):
+        args = parse_mcd_human_arguments(payload)
+        yield event.plain_result(await self._run_mcd_mcp_tool("query-my-coupons", args))
+
+    @mcd.command("地址")
+    async def mcd_addresses_human_command(self, event: AstrMessageEvent):
+        yield event.plain_result(await self._run_mcd_mcp_tool("delivery-query-addresses", {}))
+
+    @mcd.command("添加地址")
+    async def mcd_create_address_human_command(
+        self, event: AstrMessageEvent, payload: GreedyStr
+    ):
+        args = parse_mcd_human_arguments(
+            payload,
+            ("city", "contactName", "phone", "address", "addressDetail", "gender"),
+            defaults={"gender": "先生"},
+        )
+        yield event.plain_result(await self._run_mcd_mcp_tool("delivery-create-address", args))
+
+    @mcd.command("附近门店")
+    async def mcd_nearby_stores_human_command(
+        self, event: AstrMessageEvent, payload: GreedyStr
+    ):
+        args = parse_mcd_human_arguments(
+            payload,
+            ("city", "keyword"),
+            defaults={"searchType": 2, "beType": 1},
+        )
+        yield event.plain_result(await self._run_mcd_mcp_tool("query-nearby-stores", args))
+
+    @mcd.command("外送门店")
+    async def mcd_delivery_stores_human_command(
+        self, event: AstrMessageEvent, payload: GreedyStr
+    ):
+        args = parse_mcd_human_arguments(
+            payload,
+            ("addressId",),
+            defaults={"beType": 2},
+        )
+        yield event.plain_result(await self._run_mcd_mcp_tool("delivery-query-stores", args))
+
+    @mcd.command("餐品")
+    async def mcd_meals_human_command(self, event: AstrMessageEvent, payload: GreedyStr):
+        args = parse_mcd_human_arguments(
+            payload,
+            ("storeCode",),
+            defaults={"orderType": 1, "beType": 1},
+        )
+        yield event.plain_result(await self._run_mcd_mcp_tool("query-meals", args))
+
+    @mcd.command("餐品详情")
+    async def mcd_meal_detail_human_command(
+        self, event: AstrMessageEvent, payload: GreedyStr
+    ):
+        args = parse_mcd_human_arguments(
+            payload,
+            ("storeCode", "code"),
+            defaults={"orderType": 1, "beType": 1},
+        )
+        yield event.plain_result(await self._run_mcd_mcp_tool("query-meal-detail", args))
+
+    @mcd.command("门店券")
+    async def mcd_store_coupons_human_command(
+        self, event: AstrMessageEvent, payload: GreedyStr
+    ):
+        args = parse_mcd_human_arguments(
+            payload,
+            ("storeCode",),
+            defaults={"orderType": 1, "beType": 1},
+        )
+        yield event.plain_result(await self._run_mcd_mcp_tool("query-store-coupons", args))
+
+    @mcd.command("估价")
+    async def mcd_price_human_command(self, event: AstrMessageEvent, payload: GreedyStr):
+        try:
+            args = parse_mcd_price_arguments(payload)
+        except McdMcpError as exc:
+            yield event.plain_result(str(exc))
+            return
+        yield event.plain_result(await self._run_mcd_mcp_tool("calculate-price", args))
+
+    @mcd.command("团餐服务")
+    async def mcd_meal_assistance_human_command(
+        self, event: AstrMessageEvent, payload: GreedyStr
+    ):
+        args = parse_mcd_human_arguments(
+            payload,
+            ("storeCode",),
+            defaults={"orderType": 2, "beType": 6},
+        )
+        yield event.plain_result(await self._run_mcd_mcp_tool("query-meal-assistance", args))
+
+    @mcd.command("积分")
+    async def mcd_points_account_human_command(self, event: AstrMessageEvent):
+        yield event.plain_result(await self._run_mcd_mcp_tool("query-my-account", {}))
+
+    @mcd.command("积分商品")
+    async def mcd_points_products_human_command(self, event: AstrMessageEvent, category: str = "全部"):
+        cat_rule_ids = parse_mcd_points_category(category)
+        args = {"catRuleIds": cat_rule_ids} if cat_rule_ids else {}
+        yield event.plain_result(await self._run_mcd_mcp_tool("mall-points-products", args))
+
+    @mcd.command("积分商品详情")
+    async def mcd_points_product_detail_human_command(self, event: AstrMessageEvent, spu_id: int):
+        yield event.plain_result(
+            await self._run_mcd_mcp_tool("mall-product-detail", {"spuId": spu_id})
+        )
+
+    @mcd.command("订单")
+    async def mcd_order_human_command(self, event: AstrMessageEvent, order_id: str):
+        yield event.plain_result(await self._run_mcd_mcp_tool("query-order", {"orderId": order_id}))
+
+    @mcd.command("商城订单")
+    async def mcd_mall_orders_human_command(
+        self, event: AstrMessageEvent, payload: GreedyStr
+    ):
+        args = parse_mcd_human_arguments(payload)
+        yield event.plain_result(await self._run_mcd_mcp_tool("mall-order-list", args))
+
+    @mcd.command("商城订单详情")
+    async def mcd_mall_order_detail_human_command(self, event: AstrMessageEvent, order_id: str):
+        yield event.plain_result(
+            await self._run_mcd_mcp_tool("mall-order-detail", {"orderId": order_id})
+        )
+
+    async def _run_mcd_mcp_tool(self, tool_name: str, arguments: Mapping[str, Any]) -> str:
+        if not self.mcd_mcp_config.enabled:
+            return "麦当劳 MCP 指令已被配置关闭。"
+        if not self.mcd_mcp_config.token:
+            return "麦当劳 MCP token 未配置，请在 mcd_mcp.token 中填写。"
+        try:
+            tool_name = ensure_mcd_mcp_tool_allowed(tool_name)
+            result = await self.mcd_mcp_client.call_tool(tool_name, arguments)
+            return format_mcd_mcp_result(
+                tool_name,
+                result,
+                self.mcd_mcp_config.max_response_chars,
+            )
+        except McdMcpError as exc:
+            return str(exc)
+        except Exception as exc:
+            logger.exception("[util] 麦当劳 MCP 调用失败: tool=%s", tool_name)
+            return f"麦当劳 MCP 调用失败：{exc}"
+
+    async def _run_mcd_mcp_command(self, tool_name: str, payload: str = "") -> str:
+        try:
+            arguments = parse_mcd_mcp_arguments(payload)
+        except McdMcpError as exc:
+            return str(exc)
+        return await self._run_mcd_mcp_tool(tool_name, arguments)
+
+    async def _mcd_mcp_tool_schema(self, tool_name: str) -> str:
+        if not self.mcd_mcp_config.enabled:
+            return "麦当劳 MCP 指令已被配置关闭。"
+        if not self.mcd_mcp_config.token:
+            return "麦当劳 MCP token 未配置，请在 mcd_mcp.token 中填写。"
+        response = await self.mcd_mcp_client.list_tools()
+        tools = response.get("result", {}).get("tools", [])
+        for tool in tools:
+            if tool.get("name") != tool_name:
+                continue
+            text = json.dumps(tool, ensure_ascii=False, indent=2)
+            return text[: self.mcd_mcp_config.max_response_chars]
+        return f"未从远端 MCP 找到工具：{tool_name}"
 
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
     @filter.command("群友史")
