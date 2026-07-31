@@ -197,7 +197,10 @@ ROLEPLAY_KNOWLEDGE_DB_RELATIVE_PATH = (
     Path("roleplay_knowledge") / ROLEPLAY_KNOWLEDGE_DB_FILENAME
 )
 ROLEPLAY_KNOWLEDGE_DB_PATH = ROLEPLAY_KNOWLEDGE_DB_RELATIVE_PATH
-@register("util", "lishinig", "私人插件", "1.6.28")
+FORWARD_NODES_BATCH_SIZE = 100
+
+
+@register("util", "lishinig", "私人插件", "1.6.29")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -2138,7 +2141,9 @@ class util(Star):
         if not nodes:
             return
 
-        await event.send(event.chain_result([Comp.Nodes(nodes=nodes)]))
+        for index in range(0, len(nodes), FORWARD_NODES_BATCH_SIZE):
+            batch = nodes[index : index + FORWARD_NODES_BATCH_SIZE]
+            await event.send(event.chain_result([Comp.Nodes(nodes=batch)]))
 
     async def _send_split_lines_one_by_one(
         self,

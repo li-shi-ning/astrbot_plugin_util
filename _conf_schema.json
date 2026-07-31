@@ -356,7 +356,7 @@
   "stream_output": {
     "description": "输出流重整与发送方式",
     "type": "object",
-    "hint": "逐句发送、随机间隔、合并转发打包发送相关配置",
+    "hint": "逐句发送、随机间隔、合并转发打包发送相关配置；合并转发会自动按每批最多 100 个节点拆分，避免超过平台上限。",
     "items": {
       "enable_human_like_stream_delay": {
         "description": "是否在逐句发送时加入随机停顿，模拟真人聊天节奏。",
