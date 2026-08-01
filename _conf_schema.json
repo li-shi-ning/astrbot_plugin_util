@@ -98,6 +98,55 @@
       }
     }
   },
+  "ai_voice": {
+    "description": "AI 主动语音发送工具",
+    "type": "object",
+    "hint": "向大模型暴露 send_voice_to_user 工具，让 AI 可以把短文本合成为语音并发送。参考 li_qwen3_tts_api 的 /generate 接口，audio_id 会作为 reference_id 传入，token 仅用于请求鉴权且不会输出到日志。",
+    "items": {
+      "enable_ai_voice_tool": {
+        "description": "是否启用 AI 主动语音发送工具。关闭后不会向大模型暴露 send_voice_to_user。",
+        "type": "bool",
+        "default": false,
+        "hint": "true / false"
+      },
+      "api_base_url": {
+        "description": "TTS API 服务地址。参考项目默认形如 http://127.0.0.1:8000。",
+        "type": "string",
+        "default": "http://127.0.0.1:8000",
+        "hint": "http://127.0.0.1:8000"
+      },
+      "audio_id": {
+        "description": "音频/参考音色 ID。调用 li_qwen3_tts_api 时会作为 reference_id 传入。",
+        "type": "string",
+        "default": "",
+        "hint": "参考音频 ID / reference_id"
+      },
+      "token": {
+        "description": "TTS API 鉴权 token。请求时会作为 Bearer token 使用，日志只会显示是否已配置。",
+        "type": "text",
+        "default": "",
+        "hint": "不要填写 Bearer 前缀"
+      },
+      "language": {
+        "description": "默认语言提示。留空则不传；可填写 Chinese、Japanese、English、zh、ja、en 等服务端支持的值。",
+        "type": "string",
+        "default": "",
+        "hint": "Japanese"
+      },
+      "timeout_seconds": {
+        "description": "语音生成和下载的总超时时间，范围 1-600 秒。",
+        "type": "int",
+        "default": 180,
+        "hint": "180"
+      },
+      "max_text_chars": {
+        "description": "单次语音合成文本最大字符数，范围 1-2000。建议保持较短，避免语音过长。",
+        "type": "int",
+        "default": 300,
+        "hint": "300"
+      }
+    }
+  },
   "offline_email_alert": {
     "description": "账号下线邮件通知",
     "type": "object",

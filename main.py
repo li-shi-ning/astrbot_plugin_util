@@ -36,6 +36,12 @@ from astrbot.core.utils.astrbot_path import get_astrbot_plugin_data_path
 # ====== 核心库 ======
 try:
     from .core.Filter import register_pack_type
+    from .core.ai_voice import (
+        AI_VOICE_TOOL_NAME,
+        AiVoiceClient,
+        AiVoiceError,
+        build_ai_voice_config,
+    )
     from .core.group_history import (
         GROUP_HISTORY_EMPTY_ERROR,
         GROUP_HISTORY_FORMAT_ERROR,
@@ -107,6 +113,12 @@ try:
     )
 except ImportError:
     from core.Filter import register_pack_type
+    from core.ai_voice import (
+        AI_VOICE_TOOL_NAME,
+        AiVoiceClient,
+        AiVoiceError,
+        build_ai_voice_config,
+    )
     from core.group_history import (
         GROUP_HISTORY_EMPTY_ERROR,
         GROUP_HISTORY_FORMAT_ERROR,
@@ -192,6 +204,7 @@ LOVE_MESSAGES_PATH = (PLUGIN_ROOT / "core" / "love_messages.txt").resolve()
 PLUGIN_DATA_DIR = (Path(get_astrbot_plugin_data_path()) / "astrbot_plugin_util").resolve()
 NETEASE_LOGIN_DATA_DIR = (PLUGIN_DATA_DIR / "netease_login").resolve()
 NETEASE_COOKIE_PATH = (NETEASE_LOGIN_DATA_DIR / "cookie.json").resolve()
+AI_VOICE_DATA_DIR = (PLUGIN_DATA_DIR / "ai_voice").resolve()
 ROLEPLAY_KNOWLEDGE_ROOT = (PLUGIN_ROOT / "cs" / "output").resolve()
 ROLEPLAY_KNOWLEDGE_DB_RELATIVE_PATH = (
     Path("roleplay_knowledge") / ROLEPLAY_KNOWLEDGE_DB_FILENAME
@@ -200,7 +213,7 @@ ROLEPLAY_KNOWLEDGE_DB_PATH = ROLEPLAY_KNOWLEDGE_DB_RELATIVE_PATH
 FORWARD_NODES_BATCH_SIZE = 100
 
 
-@register("util", "lishinig", "私人插件", "1.6.29")
+@register("util", "lishinig", "私人插件", "1.6.30")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -379,6 +392,7 @@ class util(Star):
         li_config = config_section("li_handoff")
         group_history_config = config_section("group_history")
         music_search_config = config_section("music_search")
+        ai_voice_config = config_section("ai_voice")
         offline_email_alert_config = config_section("offline_email_alert")
         roleplay_knowledge_config = config_section("roleplay_knowledge")
 
@@ -509,6 +523,18 @@ class util(Star):
         )
         self.offline_webhook_receive_rules = load_offline_webhook_receive_rules(config)
         self._offline_webhook_runner: web.AppRunner | None = None
+        self.ai_voice_config = build_ai_voice_config(ai_voice_config)
+        self.ai_voice_client = AiVoiceClient(self.ai_voice_config, AI_VOICE_DATA_DIR)
+        logger.info(
+            "[util] ai voice tool: "
+            f"enabled={self.ai_voice_config.enabled}, "
+            f"ready={self.ai_voice_config.ready}, "
+            f"api_base_url={self.ai_voice_config.api_base_url}, "
+            f"audio_id_configured={bool(self.ai_voice_config.audio_id)}, "
+            f"token_configured={bool(self.ai_voice_config.token)}, "
+            f"language={self.ai_voice_config.language or '<auto>'}, "
+            f"max_text_chars={self.ai_voice_config.max_text_chars}"
+        )
         self.music_search_config = build_music_config(music_search_config)
         persisted_music_cookie = load_persisted_music_cookie(NETEASE_COOKIE_PATH)
         if persisted_music_cookie:
@@ -1461,6 +1487,10 @@ class util(Star):
         if event.get_platform_id() != "ni" or not self.enable_let_li_speak_tool:
             self._remove_tool_from_request(req, "let_li_speak")
 
+        ai_voice_config = getattr(self, "ai_voice_config", None)
+        if ai_voice_config is None or not ai_voice_config.ready:
+            self._remove_tool_from_request(req, AI_VOICE_TOOL_NAME)
+
         if not self.roleplay_knowledge_config.enabled:
             self._remove_tool_from_request(req, ROLEPLAY_KNOWLEDGE_TOOL_NAME)
 
@@ -1908,6 +1938,46 @@ class util(Star):
         return self._build_let_li_speak_result(
             status="成功，希罗已直接回复用户",
             li_reply=li_reply,
+        )
+
+    @filter.llm_tool(name=AI_VOICE_TOOL_NAME)
+    async def send_voice_to_user(
+        self,
+        event: AstrMessageEvent,
+        text: str,
+        language: str = "",
+    ) -> str:
+        """Send a voice message to the current user/session.
+
+        Use this tool when the user asks you to speak by voice, send a voice
+        reply, or when a short voice response is more suitable than text. Keep
+        `text` concise; after this tool succeeds, do not repeat the same content
+        again as a normal text reply.
+
+        Args:
+            text(string): The exact text to synthesize and send as voice.
+            language(string): Optional language hint, such as Japanese, Chinese, zh, ja, or en.
+        """
+        if not self.ai_voice_config.enabled:
+            return "AI 语音发送工具已被配置关闭。"
+        if not self.ai_voice_config.ready:
+            return "AI 语音发送工具配置不完整，请配置 ai_voice.api_base_url、audio_id 和 token。"
+
+        try:
+            audio_path = await self.ai_voice_client.generate_to_file(text, language)
+            await event.send(
+                MessageChain([Comp.Record.fromFileSystem(str(audio_path.resolve()))])
+            )
+        except AiVoiceError as exc:
+            logger.warning("[util] AI voice send failed: %s", exc)
+            return f"AI 语音发送失败：{exc}"
+        except Exception as exc:
+            logger.exception("[util] unexpected AI voice send failure")
+            return f"AI 语音发送失败：{exc}"
+
+        return (
+            "AI 语音已发送。你本轮不要再用普通文本重复这段语音内容；"
+            "如果需要补充，只补充极短说明。"
         )
 
     @filter.llm_tool(name="read_current_history")

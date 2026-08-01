@@ -48,6 +48,21 @@ AstrBot 当前配置界面没有目录选择器，因此 `audio_directory` 使�
 
 需要使用 VIP 账号访问会员音乐时，发送 `/网易云登录` 并用网易云音乐 App 扫码确认。登录成功后插件会把接口返回的 Cookie 持久化保存到 AstrBot 插件数据目录 `data/plugin_data/astrbot_plugin_util/netease_login/cookie.json`，重启后会自动读取，后续点歌会自动携带该登录态。`music_search.cookie` 仍可手动填写作为备用配置。Cookie 属于账号凭据，请只在可信环境中使用登录指令。
 
+## AI 主动语音发送工具
+
+插件可向大模型暴露 `send_voice_to_user` 工具，让 AI 在需要时把短文本合成为语音并发送到当前会话。该工具参考 `li_qwen3_tts_api` 的 `POST /generate` 接口实现：配置里的 `audio_id` 会作为 `reference_id` 传给 TTS 服务，生成结果会下载到 AstrBot 插件数据目录后再作为本地语音发送。
+
+在插件配置页的 `ai_voice` 中配置：
+
+- `enable_ai_voice_tool`：是否启用该工具，默认关闭。
+- `api_base_url`：TTS API 服务地址，例如 `http://127.0.0.1:8000`。
+- `audio_id`：音频/参考音色 ID，对应参考项目返回的 `reference_id`。
+- `token`：TTS API 鉴权 token，请直接填写 token 内容，不需要 `Bearer` 前缀；日志只显示是否已配置，不输出 token 本体。
+- `language`：默认语言提示，可留空，也可填写服务端支持的 `Chinese`、`Japanese`、`zh`、`ja` 等。
+- `max_text_chars`：单次语音合成文本长度上限，建议保持较短，避免语音过长。
+
+启用且配置完整后，模型会看到 `send_voice_to_user(text, language)` 工具。工具成功发送语音后会提醒模型本轮不要再用普通文本重复同一段内容。
+
 ## 账号下线邮件通知
 
 插件会检测 AIOCQHTTP 上报的 `bot_offline` 下线通知，例如“你的账号当前登录已失效，请重新登录。”。命中后可通过 QQ 邮箱 SMTP 自动发送告警邮件。
@@ -141,6 +156,7 @@ AstrBot 当前配置界面没有目录选择器，因此 `audio_directory` 使�
 - 新增 NullDox 风格的 `/土味情话 [QQ号|@用户]` 指令。
 - 新增 `/点歌` 音乐搜索与点歌功能。
 - 新增 `/网易云登录` 扫码登录功能，可自动持久化保存网易云 Cookie。
+- 新增 AI 主动语音发送工具，可调用外部 TTS API 生成并发送语音。
 - 新增 AIOCQHTTP 账号下线邮件通知功能。
 - 新增下线 Webhook 发送端与接收端，可在多个 AstrBot 实例之间推送下线提醒。
 - 新增角色资料库搜索工具，可按 ni/其他配置自动选择艾玛或希罗资料库。
