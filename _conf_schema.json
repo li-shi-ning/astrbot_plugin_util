@@ -133,6 +133,12 @@
         "default": "",
         "hint": "Japanese"
       },
+      "instruction": {
+        "description": "默认语音风格指令。可用自然语言控制语速、情绪、语气、口音或朗读风格；模型调用工具时也可以临时覆盖。",
+        "type": "text",
+        "default": "",
+        "hint": "例如：使用温柔自然的语气，语速稍慢。"
+      },
       "timeout_seconds": {
         "description": "语音生成和下载的总超时时间，范围 1-600 秒。",
         "type": "int",
@@ -144,6 +150,12 @@
         "type": "int",
         "default": 300,
         "hint": "300"
+      },
+      "max_instruction_chars": {
+        "description": "单次语音风格指令最大字符数，范围 1-1600。用于防止模型传入过长的风格控制文本。",
+        "type": "int",
+        "default": 600,
+        "hint": "600"
       }
     }
   },

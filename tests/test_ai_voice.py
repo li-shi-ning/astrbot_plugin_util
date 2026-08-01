@@ -14,11 +14,13 @@ if str(PLUGIN_ROOT) not in sys.path:
 
 from core.ai_voice import (  # noqa: E402
     AI_VOICE_TOOL_NAME,
+    AiVoiceClient,
     AiVoiceConfig,
     AiVoiceError,
     build_ai_voice_config,
     normalize_ai_voice_api_base_url,
     validate_ai_voice_text,
+    validate_ai_voice_instruction,
 )
 from main import util  # noqa: E402
 
@@ -28,10 +30,27 @@ class FakeAiVoiceClient:
         self.audio_path = audio_path
         self.calls = []
 
-    async def generate_to_file(self, text: str, language: str = "") -> Path:
-        self.calls.append((text, language))
+    async def generate_to_file(
+        self,
+        text: str,
+        language: str = "",
+        instruction: str = "",
+    ) -> Path:
+        self.calls.append((text, language, instruction))
         self.audio_path.write_bytes(b"fake wav")
         return self.audio_path
+
+
+class CapturingAiVoiceClient(AiVoiceClient):
+    def __init__(self, config: AiVoiceConfig, output_dir: Path, audio_path: Path):
+        super().__init__(config, output_dir)
+        self.audio_path = audio_path
+        self.payloads = []
+
+    async def _post_generate(self, payload):
+        self.payloads.append(payload)
+        self.audio_path.write_bytes(b"fake wav")
+        return {"file_path": str(self.audio_path)}
 
 
 def make_event():
@@ -58,8 +77,10 @@ def test_build_ai_voice_config_reads_audio_id_and_token_without_bearer_prefix():
             "audio_id": "reference-1",
             "token": "secret-token",
             "language": "Japanese",
+            "instruction": "使用温柔自然的语气，语速稍慢。",
             "timeout_seconds": 999,
             "max_text_chars": 0,
+            "max_instruction_chars": 9999,
         }
     )
 
@@ -69,8 +90,10 @@ def test_build_ai_voice_config_reads_audio_id_and_token_without_bearer_prefix():
     assert config.audio_id == "reference-1"
     assert config.token == "secret-token"
     assert config.language == "Japanese"
+    assert config.instruction == "使用温柔自然的语气，语速稍慢。"
     assert config.timeout_seconds == 600
     assert config.max_text_chars == 1
+    assert config.max_instruction_chars == 1600
 
 
 def test_normalize_ai_voice_api_base_url_defaults_and_adds_scheme():
@@ -88,6 +111,44 @@ def test_validate_ai_voice_text_rejects_empty_or_too_long_text():
         validate_ai_voice_text("太长了", 2)
 
 
+def test_validate_ai_voice_instruction_allows_empty_and_rejects_too_long_text():
+    assert validate_ai_voice_instruction("", 10) == ""
+    assert validate_ai_voice_instruction("  温柔一点  ", 10) == "温柔一点"
+
+    with pytest.raises(AiVoiceError):
+        validate_ai_voice_instruction("太长了", 2)
+
+
+@pytest.mark.asyncio
+async def test_ai_voice_client_sends_instruction_aliases(tmp_path):
+    audio_path = tmp_path / "generated.wav"
+    client = CapturingAiVoiceClient(
+        AiVoiceConfig(
+            enabled=True,
+            api_base_url="http://tts.example",
+            audio_id="reference-1",
+            token="secret-token",
+            language="Japanese",
+            instruction="使用默认温柔语气",
+        ),
+        tmp_path,
+        audio_path,
+    )
+
+    result = await client.generate_to_file("你好")
+
+    assert result == audio_path
+    assert client.payloads == [
+        {
+            "text": "你好",
+            "reference_id": "reference-1",
+            "language": "Japanese",
+            "instruction": "使用默认温柔语气",
+            "instructions": "使用默认温柔语气",
+        }
+    ]
+
+
 @pytest.mark.asyncio
 async def test_send_voice_to_user_generates_and_sends_record(tmp_path):
     audio_path = tmp_path / "voice.wav"
@@ -103,9 +164,14 @@ async def test_send_voice_to_user_generates_and_sends_record(tmp_path):
     )
     event = make_event()
 
-    result = await plugin.send_voice_to_user(event, "请用语音说这句话", "Japanese")
+    result = await plugin.send_voice_to_user(
+        event,
+        "请用语音说这句话",
+        "Japanese",
+        "使用温柔自然的语气",
+    )
 
-    assert client.calls == [("请用语音说这句话", "Japanese")]
+    assert client.calls == [("请用语音说这句话", "Japanese", "使用温柔自然的语气")]
     assert "AI 语音已发送" in result
     assert len(event.sent) == 1
     assert isinstance(event.sent[0].chain[0], Comp.Record)

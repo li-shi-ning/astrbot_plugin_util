@@ -59,9 +59,11 @@ AstrBot 当前配置界面没有目录选择器，因此 `audio_directory` 使�
 - `audio_id`：音频/参考音色 ID，对应参考项目返回的 `reference_id`。
 - `token`：TTS API 鉴权 token，请直接填写 token 内容，不需要 `Bearer` 前缀；日志只显示是否已配置，不输出 token 本体。
 - `language`：默认语言提示，可留空，也可填写服务端支持的 `Chinese`、`Japanese`、`zh`、`ja` 等。
+- `instruction`：默认语音风格指令，可用自然语言控制语速、情绪、语气、口音或朗读风格，例如“使用温柔自然的语气，语速稍慢。”。模型调用工具时也可以临时覆盖。
 - `max_text_chars`：单次语音合成文本长度上限，建议保持较短，避免语音过长。
+- `max_instruction_chars`：单次语音风格指令长度上限，默认 600，最大 1600。
 
-启用且配置完整后，模型会看到 `send_voice_to_user(text, language)` 工具。工具成功发送语音后会提醒模型本轮不要再用普通文本重复同一段内容。
+启用且配置完整后，模型会看到 `send_voice_to_user(text, language, instruction)` 工具。工具成功发送语音后会提醒模型本轮不要再用普通文本重复同一段内容。
 
 ## 账号下线邮件通知
 
@@ -157,6 +159,7 @@ AstrBot 当前配置界面没有目录选择器，因此 `audio_directory` 使�
 - 新增 `/点歌` 音乐搜索与点歌功能。
 - 新增 `/网易云登录` 扫码登录功能，可自动持久化保存网易云 Cookie。
 - 新增 AI 主动语音发送工具，可调用外部 TTS API 生成并发送语音。
+- AI 主动语音发送工具支持 `instruction` 风格指令，可用自然语言影响语速、情绪、语气和朗读风格。
 - 新增 AIOCQHTTP 账号下线邮件通知功能。
 - 新增下线 Webhook 发送端与接收端，可在多个 AstrBot 实例之间推送下线提醒。
 - 新增角色资料库搜索工具，可按 ni/其他配置自动选择艾玛或希罗资料库。

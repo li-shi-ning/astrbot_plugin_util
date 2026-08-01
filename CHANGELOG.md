@@ -1,3 +1,8 @@
+# v1.6.31
+
+- `send_voice_to_user` 新增 `instruction` 参数，可用自然语言影响语音生成的语速、情绪、语气、口音和朗读风格。
+- `ai_voice` 新增默认 `instruction` 与 `max_instruction_chars` 配置项；请求 TTS 服务时会同时携带 `instruction` 和 `instructions` 字段以兼容不同服务端实现。
+
 # v1.6.30
 
 - 新增 `send_voice_to_user` 大模型工具，可调用外部 TTS API 生成语音并发送到当前会话。

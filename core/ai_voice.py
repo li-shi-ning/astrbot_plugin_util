@@ -21,8 +21,10 @@ class AiVoiceConfig:
     audio_id: str = ""
     token: str = ""
     language: str = ""
+    instruction: str = ""
     timeout_seconds: int = 180
     max_text_chars: int = 300
+    max_instruction_chars: int = 600
 
     @property
     def ready(self) -> bool:
@@ -43,8 +45,15 @@ def build_ai_voice_config(config: dict[str, Any] | None) -> AiVoiceConfig:
         audio_id=str(config.get("audio_id", "") or "").strip(),
         token=str(config.get("token", "") or "").strip(),
         language=str(config.get("language", "") or "").strip(),
+        instruction=str(config.get("instruction", "") or "").strip(),
         timeout_seconds=_int_between(config.get("timeout_seconds"), default=180, minimum=1, maximum=600),
         max_text_chars=_int_between(config.get("max_text_chars"), default=300, minimum=1, maximum=2000),
+        max_instruction_chars=_int_between(
+            config.get("max_instruction_chars"),
+            default=600,
+            minimum=1,
+            maximum=1600,
+        ),
     )
 
 
@@ -74,12 +83,26 @@ def validate_ai_voice_text(text: str, max_chars: int) -> str:
     return text
 
 
+def validate_ai_voice_instruction(instruction: str, max_chars: int) -> str:
+    instruction = str(instruction or "").strip()
+    if len(instruction) > max_chars:
+        raise AiVoiceError(
+            f"语音风格指令过长，当前 {len(instruction)} 字，配置上限 {max_chars} 字。"
+        )
+    return instruction
+
+
 class AiVoiceClient:
     def __init__(self, config: AiVoiceConfig, output_dir: Path):
         self.config = config
         self.output_dir = output_dir
 
-    async def generate_to_file(self, text: str, language: str = "") -> Path:
+    async def generate_to_file(
+        self,
+        text: str,
+        language: str = "",
+        instruction: str = "",
+    ) -> Path:
         if not self.config.ready:
             raise AiVoiceError("AI 语音工具未启用，或 api_base_url/audio_id/token 未配置完整。")
 
@@ -91,6 +114,13 @@ class AiVoiceClient:
         selected_language = str(language or self.config.language or "").strip()
         if selected_language:
             payload["language"] = selected_language
+        selected_instruction = validate_ai_voice_instruction(
+            str(instruction or self.config.instruction or ""),
+            self.config.max_instruction_chars,
+        )
+        if selected_instruction:
+            payload["instruction"] = selected_instruction
+            payload["instructions"] = selected_instruction
 
         result = await self._post_generate(payload)
         file_path = self._local_file_path_from_result(result)

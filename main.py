@@ -213,7 +213,7 @@ ROLEPLAY_KNOWLEDGE_DB_PATH = ROLEPLAY_KNOWLEDGE_DB_RELATIVE_PATH
 FORWARD_NODES_BATCH_SIZE = 100
 
 
-@register("util", "lishinig", "私人插件", "1.6.30")
+@register("util", "lishinig", "私人插件", "1.6.31")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -533,7 +533,9 @@ class util(Star):
             f"audio_id_configured={bool(self.ai_voice_config.audio_id)}, "
             f"token_configured={bool(self.ai_voice_config.token)}, "
             f"language={self.ai_voice_config.language or '<auto>'}, "
-            f"max_text_chars={self.ai_voice_config.max_text_chars}"
+            f"instruction_configured={bool(self.ai_voice_config.instruction)}, "
+            f"max_text_chars={self.ai_voice_config.max_text_chars}, "
+            f"max_instruction_chars={self.ai_voice_config.max_instruction_chars}"
         )
         self.music_search_config = build_music_config(music_search_config)
         persisted_music_cookie = load_persisted_music_cookie(NETEASE_COOKIE_PATH)
@@ -1946,17 +1948,20 @@ class util(Star):
         event: AstrMessageEvent,
         text: str,
         language: str = "",
+        instruction: str = "",
     ) -> str:
         """Send a voice message to the current user/session.
 
         Use this tool when the user asks you to speak by voice, send a voice
-        reply, or when a short voice response is more suitable than text. Keep
-        `text` concise; after this tool succeeds, do not repeat the same content
-        again as a normal text reply.
+        reply, or when a short voice response is more suitable than text. Use
+        `instruction` to control speaking style, emotion, speed, accent, or
+        performance direction. Keep `text` concise; after this tool succeeds,
+        do not repeat the same content again as a normal text reply.
 
         Args:
             text(string): The exact text to synthesize and send as voice.
             language(string): Optional language hint, such as Japanese, Chinese, zh, ja, or en.
+            instruction(string): Optional natural-language style instruction, such as "use a gentle tone and speak slowly".
         """
         if not self.ai_voice_config.enabled:
             return "AI 语音发送工具已被配置关闭。"
@@ -1964,7 +1969,11 @@ class util(Star):
             return "AI 语音发送工具配置不完整，请配置 ai_voice.api_base_url、audio_id 和 token。"
 
         try:
-            audio_path = await self.ai_voice_client.generate_to_file(text, language)
+            audio_path = await self.ai_voice_client.generate_to_file(
+                text,
+                language,
+                instruction,
+            )
             await event.send(
                 MessageChain([Comp.Record.fromFileSystem(str(audio_path.resolve()))])
             )
