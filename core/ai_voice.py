@@ -5,13 +5,16 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import aiohttp
 
 
 AI_VOICE_TOOL_NAME = "send_voice_to_user"
-DEFAULT_AI_VOICE_API_BASE_URL = "http://127.0.0.1:8000"
+DEFAULT_AI_VOICE_API_BASE_URL = (
+    "https://dashscope.aliyuncs.com/api/v1/services/audio/tts/SpeechSynthesizer"
+)
+DEFAULT_AI_VOICE_MODEL = "cosyvoice-v3.5-plus"
 
 
 @dataclass(frozen=True)
@@ -20,6 +23,9 @@ class AiVoiceConfig:
     api_base_url: str = DEFAULT_AI_VOICE_API_BASE_URL
     audio_id: str = ""
     token: str = ""
+    model: str = DEFAULT_AI_VOICE_MODEL
+    audio_format: str = "wav"
+    sample_rate: int = 24000
     language: str = ""
     instruction: str = ""
     timeout_seconds: int = 180
@@ -44,6 +50,9 @@ def build_ai_voice_config(config: dict[str, Any] | None) -> AiVoiceConfig:
         ),
         audio_id=str(config.get("audio_id", "") or "").strip(),
         token=str(config.get("token", "") or "").strip(),
+        model=str(config.get("model", DEFAULT_AI_VOICE_MODEL) or DEFAULT_AI_VOICE_MODEL).strip(),
+        audio_format=normalize_ai_voice_audio_format(config.get("audio_format", "wav")),
+        sample_rate=_normalize_sample_rate(config.get("sample_rate")),
         language=str(config.get("language", "") or "").strip(),
         instruction=str(config.get("instruction", "") or "").strip(),
         timeout_seconds=_int_between(config.get("timeout_seconds"), default=180, minimum=1, maximum=600),
@@ -71,7 +80,21 @@ def normalize_ai_voice_api_base_url(value: str) -> str:
         return DEFAULT_AI_VOICE_API_BASE_URL
     if not value.startswith(("http://", "https://")):
         value = f"http://{value}"
-    return value.rstrip("/")
+    return value
+
+
+def normalize_ai_voice_audio_format(value: Any) -> str:
+    audio_format = str(value or "wav").strip().lower()
+    if audio_format not in {"wav", "mp3", "pcm", "opus"}:
+        return "wav"
+    return audio_format
+
+
+def _normalize_sample_rate(value: Any) -> int:
+    sample_rate = _int_between(value, default=24000, minimum=8000, maximum=48000)
+    if sample_rate not in {8000, 16000, 22050, 24000, 44100, 48000}:
+        return 24000
+    return sample_rate
 
 
 def validate_ai_voice_text(text: str, max_chars: int) -> str:
@@ -107,29 +130,32 @@ class AiVoiceClient:
             raise AiVoiceError("AI 语音工具未启用，或 api_base_url/audio_id/token 未配置完整。")
 
         text = validate_ai_voice_text(text, self.config.max_text_chars)
-        payload = {
+        input_data: dict[str, Any] = {
             "text": text,
-            "reference_id": self.config.audio_id,
+            "voice": self.config.audio_id,
+            "format": self.config.audio_format,
+            "sample_rate": self.config.sample_rate,
         }
         selected_language = str(language or self.config.language or "").strip()
         if selected_language:
-            payload["language"] = selected_language
+            input_data["language_hints"] = [selected_language]
         selected_instruction = validate_ai_voice_instruction(
             str(instruction or self.config.instruction or ""),
             self.config.max_instruction_chars,
         )
         if selected_instruction:
-            payload["instruction"] = selected_instruction
-            payload["instructions"] = selected_instruction
+            input_data["instruction"] = selected_instruction
+
+        payload = {
+            "model": self.config.model,
+            "input": input_data,
+        }
 
         result = await self._post_generate(payload)
-        file_path = self._local_file_path_from_result(result)
-        if file_path is not None:
-            return file_path
-
-        audio_url = str(result.get("audio_url") or "").strip()
+        audio_url = extract_ai_voice_audio_url(result)
         if not audio_url:
-            raise AiVoiceError("TTS 服务响应中没有 audio_url 或可访问的 file_path。")
+            request_id = str(result.get("request_id") or "未知")
+            raise AiVoiceError(f"TTS 服务响应中没有 output.audio.url，request_id={request_id}。")
         return await self._download_audio(audio_url)
 
     async def _post_generate(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -138,7 +164,7 @@ class AiVoiceClient:
             "Authorization": f"Bearer {self.config.token}",
             "Content-Type": "application/json",
         }
-        url = f"{self.config.api_base_url}/generate"
+        url = self.config.api_base_url
         async with aiohttp.ClientSession(timeout=timeout) as session:
             try:
                 async with session.post(url, headers=headers, json=payload) as response:
@@ -150,20 +176,18 @@ class AiVoiceClient:
             except ValueError as exc:
                 raise AiVoiceError("TTS 服务返回的不是合法 JSON。") from exc
             if response.status >= 400:
-                detail = result.get("detail") if isinstance(result, dict) else result
-                raise AiVoiceError(f"TTS 生成失败：HTTP {response.status}, detail={detail}")
+                if isinstance(result, dict):
+                    code = result.get("code", response.status)
+                    message = result.get("message") or result.get("detail") or "未知错误"
+                    request_id = result.get("request_id", "未知")
+                    raise AiVoiceError(
+                        f"TTS 生成失败：HTTP {response.status}, "
+                        f"code={code}, message={message}, request_id={request_id}"
+                    )
+                raise AiVoiceError(f"TTS 生成失败：HTTP {response.status}, detail={result}")
         if not isinstance(result, dict):
             raise AiVoiceError("TTS 服务返回格式错误。")
         return result
-
-    def _local_file_path_from_result(self, result: dict[str, Any]) -> Path | None:
-        raw_path = str(result.get("file_path") or "").strip()
-        if not raw_path:
-            return None
-        path = Path(raw_path)
-        if path.is_file():
-            return path
-        return None
 
     async def _download_audio(self, audio_url: str) -> Path:
         output_path = self._new_output_path(audio_url)
@@ -171,7 +195,9 @@ class AiVoiceClient:
         temporary_path = output_path.with_name(f"{output_path.name}.part")
 
         timeout = aiohttp.ClientTimeout(total=self.config.timeout_seconds)
-        resolved_url = urljoin(f"{self.config.api_base_url}/", audio_url)
+        resolved_url = audio_url
+        if not urlparse(audio_url).scheme:
+            resolved_url = urljoin(f"{self.config.api_base_url}/", audio_url)
         async with aiohttp.ClientSession(timeout=timeout) as session:
             try:
                 async with session.get(resolved_url) as response:
@@ -199,3 +225,14 @@ class AiVoiceClient:
             suffix = ".wav"
         filename = f"ai-voice-{int(time.time())}-{uuid.uuid4().hex[:8]}{suffix}"
         return self.output_dir / filename
+
+
+def extract_ai_voice_audio_url(result: dict[str, Any]) -> str:
+    output = result.get("output")
+    if isinstance(output, dict):
+        audio = output.get("audio")
+        if isinstance(audio, dict):
+            audio_url = str(audio.get("url") or "").strip()
+            if audio_url:
+                return audio_url
+    return str(result.get("audio_url") or "").strip()

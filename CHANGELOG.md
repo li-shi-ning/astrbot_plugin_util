@@ -1,3 +1,9 @@
+# v1.6.32
+
+- 修正 AI 主动语音发送工具的 TTS 接入方式：按 `li_qwen3_tts_api/cosyvoice_generate.py` 调用阿里云百炼 CosyVoice 远程 SpeechSynthesizer 接口，而不是本地 `/generate` 服务。
+- `ai_voice` 默认接口地址改为 `https://dashscope.aliyuncs.com/api/v1/services/audio/tts/SpeechSynthesizer`，`audio_id` 作为 `input.voice`，`language` 作为 `input.language_hints`，`instruction` 作为 `input.instruction`。
+- 新增 `model`、`audio_format`、`sample_rate` 配置项，默认分别为 `cosyvoice-v3.5-plus`、`wav`、`24000`。
+
 # v1.6.31
 
 - `send_voice_to_user` 新增 `instruction` 参数，可用自然语言影响语音生成的语速、情绪、语气、口音和朗读风格。

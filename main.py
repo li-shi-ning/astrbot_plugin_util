@@ -213,7 +213,7 @@ ROLEPLAY_KNOWLEDGE_DB_PATH = ROLEPLAY_KNOWLEDGE_DB_RELATIVE_PATH
 FORWARD_NODES_BATCH_SIZE = 100
 
 
-@register("util", "lishinig", "私人插件", "1.6.31")
+@register("util", "lishinig", "私人插件", "1.6.32")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -532,6 +532,9 @@ class util(Star):
             f"api_base_url={self.ai_voice_config.api_base_url}, "
             f"audio_id_configured={bool(self.ai_voice_config.audio_id)}, "
             f"token_configured={bool(self.ai_voice_config.token)}, "
+            f"model={self.ai_voice_config.model}, "
+            f"audio_format={self.ai_voice_config.audio_format}, "
+            f"sample_rate={self.ai_voice_config.sample_rate}, "
             f"language={self.ai_voice_config.language or '<auto>'}, "
             f"instruction_configured={bool(self.ai_voice_config.instruction)}, "
             f"max_text_chars={self.ai_voice_config.max_text_chars}, "

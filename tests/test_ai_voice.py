@@ -18,7 +18,9 @@ from core.ai_voice import (  # noqa: E402
     AiVoiceConfig,
     AiVoiceError,
     build_ai_voice_config,
+    DEFAULT_AI_VOICE_API_BASE_URL,
     normalize_ai_voice_api_base_url,
+    normalize_ai_voice_audio_format,
     validate_ai_voice_text,
     validate_ai_voice_instruction,
 )
@@ -49,8 +51,12 @@ class CapturingAiVoiceClient(AiVoiceClient):
 
     async def _post_generate(self, payload):
         self.payloads.append(payload)
+        return {"output": {"audio": {"url": "https://dashscope.example/audio.wav"}}}
+
+    async def _download_audio(self, audio_url: str) -> Path:
+        self.downloaded_url = audio_url
         self.audio_path.write_bytes(b"fake wav")
-        return {"file_path": str(self.audio_path)}
+        return self.audio_path
 
 
 def make_event():
@@ -76,7 +82,10 @@ def test_build_ai_voice_config_reads_audio_id_and_token_without_bearer_prefix():
             "api_base_url": "127.0.0.1:8000/",
             "audio_id": "reference-1",
             "token": "secret-token",
-            "language": "Japanese",
+            "model": "cosyvoice-v3.5-plus",
+            "audio_format": "mp3",
+            "sample_rate": 44100,
+            "language": "ja",
             "instruction": "使用温柔自然的语气，语速稍慢。",
             "timeout_seconds": 999,
             "max_text_chars": 0,
@@ -89,7 +98,10 @@ def test_build_ai_voice_config_reads_audio_id_and_token_without_bearer_prefix():
     assert config.api_base_url == "http://127.0.0.1:8000"
     assert config.audio_id == "reference-1"
     assert config.token == "secret-token"
-    assert config.language == "Japanese"
+    assert config.model == "cosyvoice-v3.5-plus"
+    assert config.audio_format == "mp3"
+    assert config.sample_rate == 44100
+    assert config.language == "ja"
     assert config.instruction == "使用温柔自然的语气，语速稍慢。"
     assert config.timeout_seconds == 600
     assert config.max_text_chars == 1
@@ -97,9 +109,14 @@ def test_build_ai_voice_config_reads_audio_id_and_token_without_bearer_prefix():
 
 
 def test_normalize_ai_voice_api_base_url_defaults_and_adds_scheme():
-    assert normalize_ai_voice_api_base_url("") == "http://127.0.0.1:8000"
+    assert normalize_ai_voice_api_base_url("") == DEFAULT_AI_VOICE_API_BASE_URL
     assert normalize_ai_voice_api_base_url("tts.example.com/") == "http://tts.example.com"
     assert normalize_ai_voice_api_base_url("https://tts.example.com/") == "https://tts.example.com"
+
+
+def test_normalize_ai_voice_audio_format_defaults_invalid_values():
+    assert normalize_ai_voice_audio_format("mp3") == "mp3"
+    assert normalize_ai_voice_audio_format("bad") == "wav"
 
 
 def test_validate_ai_voice_text_rejects_empty_or_too_long_text():
@@ -128,7 +145,7 @@ async def test_ai_voice_client_sends_instruction_aliases(tmp_path):
             api_base_url="http://tts.example",
             audio_id="reference-1",
             token="secret-token",
-            language="Japanese",
+            language="ja",
             instruction="使用默认温柔语气",
         ),
         tmp_path,
@@ -138,13 +155,18 @@ async def test_ai_voice_client_sends_instruction_aliases(tmp_path):
     result = await client.generate_to_file("你好")
 
     assert result == audio_path
+    assert client.downloaded_url == "https://dashscope.example/audio.wav"
     assert client.payloads == [
         {
-            "text": "你好",
-            "reference_id": "reference-1",
-            "language": "Japanese",
-            "instruction": "使用默认温柔语气",
-            "instructions": "使用默认温柔语气",
+            "model": "cosyvoice-v3.5-plus",
+            "input": {
+                "text": "你好",
+                "voice": "reference-1",
+                "format": "wav",
+                "sample_rate": 24000,
+                "language_hints": ["ja"],
+                "instruction": "使用默认温柔语气",
+            },
         }
     ]
 

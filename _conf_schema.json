@@ -101,7 +101,7 @@
   "ai_voice": {
     "description": "AI 主动语音发送工具",
     "type": "object",
-    "hint": "向大模型暴露 send_voice_to_user 工具，让 AI 可以把短文本合成为语音并发送。参考 li_qwen3_tts_api 的 /generate 接口，audio_id 会作为 reference_id 传入，token 仅用于请求鉴权且不会输出到日志。",
+    "hint": "向大模型暴露 send_voice_to_user 工具，让 AI 可以把短文本合成为语音并发送。参考 li_qwen3_tts_api 的 cosyvoice_generate.py 远程接口，audio_id 会作为 voice 传入，token 仅用于请求鉴权且不会输出到日志。",
     "items": {
       "enable_ai_voice_tool": {
         "description": "是否启用 AI 主动语音发送工具。关闭后不会向大模型暴露 send_voice_to_user。",
@@ -110,31 +110,49 @@
         "hint": "true / false"
       },
       "api_base_url": {
-        "description": "TTS API 服务地址。参考项目默认形如 http://127.0.0.1:8000。",
+        "description": "阿里云百炼 CosyVoice 远程 TTS 接口地址。默认使用 cosyvoice_generate.py 中的 SpeechSynthesizer 地址。",
         "type": "string",
-        "default": "http://127.0.0.1:8000",
-        "hint": "http://127.0.0.1:8000"
+        "default": "https://dashscope.aliyuncs.com/api/v1/services/audio/tts/SpeechSynthesizer",
+        "hint": "https://dashscope.aliyuncs.com/api/v1/services/audio/tts/SpeechSynthesizer"
       },
       "audio_id": {
-        "description": "音频/参考音色 ID。调用 li_qwen3_tts_api 时会作为 reference_id 传入。",
+        "description": "音色 ID。调用 CosyVoice 远程接口时会作为 input.voice 传入。",
         "type": "string",
         "default": "",
-        "hint": "参考音频 ID / reference_id"
+        "hint": "cosyvoice-v3.5-plus 对应的音色 ID"
       },
       "token": {
-        "description": "TTS API 鉴权 token。请求时会作为 Bearer token 使用，日志只会显示是否已配置。",
+        "description": "阿里云百炼 API Key。请求时会作为 Bearer token 使用，日志只会显示是否已配置。",
         "type": "text",
         "default": "",
         "hint": "不要填写 Bearer 前缀"
       },
+      "model": {
+        "description": "远程 TTS 模型 ID。默认与 cosyvoice_generate.py 保持一致。",
+        "type": "string",
+        "default": "cosyvoice-v3.5-plus",
+        "hint": "cosyvoice-v3.5-plus"
+      },
+      "audio_format": {
+        "description": "生成音频格式。支持 wav、mp3、pcm、opus。",
+        "type": "string",
+        "default": "wav",
+        "hint": "wav"
+      },
+      "sample_rate": {
+        "description": "采样率。支持 8000、16000、22050、24000、44100、48000。",
+        "type": "int",
+        "default": 24000,
+        "hint": "24000"
+      },
       "language": {
-        "description": "默认语言提示。留空则不传；可填写 Chinese、Japanese、English、zh、ja、en 等服务端支持的值。",
+        "description": "默认语言提示。留空则不传；会作为 input.language_hints 的单项列表传入。CosyVoice 常用 zh、en、ja 等。",
         "type": "string",
         "default": "",
-        "hint": "Japanese"
+        "hint": "ja"
       },
       "instruction": {
-        "description": "默认语音风格指令。可用自然语言控制语速、情绪、语气、口音或朗读风格；模型调用工具时也可以临时覆盖。",
+        "description": "默认语音风格指令。会作为 input.instruction 传入，可用自然语言控制语速、情绪、语气、口音或朗读风格；模型调用工具时也可以临时覆盖。",
         "type": "text",
         "default": "",
         "hint": "例如：使用温柔自然的语气，语速稍慢。"

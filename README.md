@@ -50,16 +50,19 @@ AstrBot 当前配置界面没有目录选择器，因此 `audio_directory` 使�
 
 ## AI 主动语音发送工具
 
-插件可向大模型暴露 `send_voice_to_user` 工具，让 AI 在需要时把短文本合成为语音并发送到当前会话。该工具参考 `li_qwen3_tts_api` 的 `POST /generate` 接口实现：配置里的 `audio_id` 会作为 `reference_id` 传给 TTS 服务，生成结果会下载到 AstrBot 插件数据目录后再作为本地语音发送。
+插件可向大模型暴露 `send_voice_to_user` 工具，让 AI 在需要时把短文本合成为语音并发送到当前会话。该工具参考 `li_qwen3_tts_api` 中的 `cosyvoice_generate.py` 实现，直接调用阿里云百炼 CosyVoice 远程接口；配置里的 `audio_id` 会作为 `input.voice` 传给 TTS 服务，生成结果会下载到 AstrBot 插件数据目录后再作为本地语音发送。
 
 在插件配置页的 `ai_voice` 中配置：
 
 - `enable_ai_voice_tool`：是否启用该工具，默认关闭。
-- `api_base_url`：TTS API 服务地址，例如 `http://127.0.0.1:8000`。
-- `audio_id`：音频/参考音色 ID，对应参考项目返回的 `reference_id`。
-- `token`：TTS API 鉴权 token，请直接填写 token 内容，不需要 `Bearer` 前缀；日志只显示是否已配置，不输出 token 本体。
-- `language`：默认语言提示，可留空，也可填写服务端支持的 `Chinese`、`Japanese`、`zh`、`ja` 等。
-- `instruction`：默认语音风格指令，可用自然语言控制语速、情绪、语气、口音或朗读风格，例如“使用温柔自然的语气，语速稍慢。”。模型调用工具时也可以临时覆盖。
+- `api_base_url`：阿里云百炼 CosyVoice 远程接口地址，默认 `https://dashscope.aliyuncs.com/api/v1/services/audio/tts/SpeechSynthesizer`。
+- `audio_id`：音色 ID，对应 `cosyvoice_generate.py` 里的 `voice_id`，请求时作为 `input.voice`。
+- `token`：阿里云百炼 API Key，请直接填写 token 内容，不需要 `Bearer` 前缀；日志只显示是否已配置，不输出 token 本体。
+- `model`：远程 TTS 模型 ID，默认 `cosyvoice-v3.5-plus`。
+- `audio_format`：生成音频格式，默认 `wav`，支持 `wav`、`mp3`、`pcm`、`opus`。
+- `sample_rate`：采样率，默认 `24000`。
+- `language`：默认语言提示，可留空；会作为 `input.language_hints` 的单项列表传入，常用 `zh`、`en`、`ja`。
+- `instruction`：默认语音风格指令，会作为 `input.instruction` 传入，可用自然语言控制语速、情绪、语气、口音或朗读风格，例如“使用温柔自然的语气，语速稍慢。”。模型调用工具时也可以临时覆盖。
 - `max_text_chars`：单次语音合成文本长度上限，建议保持较短，避免语音过长。
 - `max_instruction_chars`：单次语音风格指令长度上限，默认 600，最大 1600。
 
@@ -160,6 +163,7 @@ AstrBot 当前配置界面没有目录选择器，因此 `audio_directory` 使�
 - 新增 `/网易云登录` 扫码登录功能，可自动持久化保存网易云 Cookie。
 - 新增 AI 主动语音发送工具，可调用外部 TTS API 生成并发送语音。
 - AI 主动语音发送工具支持 `instruction` 风格指令，可用自然语言影响语速、情绪、语气和朗读风格。
+- AI 主动语音发送工具按 `cosyvoice_generate.py` 调用阿里云百炼 CosyVoice 远程接口。
 - 新增 AIOCQHTTP 账号下线邮件通知功能。
 - 新增下线 Webhook 发送端与接收端，可在多个 AstrBot 实例之间推送下线提醒。
 - 新增角色资料库搜索工具，可按 ni/其他配置自动选择艾玛或希罗资料库。
