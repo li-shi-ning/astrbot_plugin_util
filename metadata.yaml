@@ -1,6 +1,6 @@
 name: astrbot_plugin_util
 display_name: util
 desc: 私人实用工具插件，包含分群关键词语音、AI 主动语音发送、QQ Agent 邮箱 CLI 工具、音乐搜索点歌、土味情话、群友史聊天记录构造、角色资料库搜索、下线邮件与 Webhook 通知、戳一戳响应、表情回应、调试命令、历史读取与输出后处理
-version: v1.6.35
+version: v1.6.36
 author: lishining
 repo: https://github.com/Li-shi-ling/astrbot_plugin_util

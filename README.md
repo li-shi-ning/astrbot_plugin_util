@@ -84,24 +84,23 @@ npm install -g @tencent-qqmail/agently-cli
 - `timeout_seconds`：CLI 命令超时时间。
 - `list_default_limit`：列出最近邮件的默认数量。
 - `enable_agently_mail_tools`：是否向大模型暴露邮箱工具。
-- `allow_write_operations`：是否允许大模型准备发送、回复、转发和删除邮件；即使开启，也必须管理员二次确认才会真正执行。
-- `admin_qqs`：允许使用 `/QQ邮箱登录`、`/QQ邮箱状态`、`/QQ邮箱确认` 的管理员 QQ 列表。留空时不会允许任何人执行人工管理指令。
+- `allow_write_operations`：是否允许大模型直接发送、回复、转发和移动邮件到废纸篓。
+- `admin_qqs`：允许使用 `/QQ邮箱登录`、`/QQ邮箱状态` 的管理员 QQ 列表。留空时不会允许任何人执行人工管理指令。
 
 管理指令：
 
 - `/QQ邮箱登录`：管理员触发 OAuth 登录。机器人会发送原始授权 URL，浏览器完成授权后自动验证邮箱。
 - `/QQ邮箱状态`：查看当前授权邮箱。
-- `/QQ邮箱确认 <confirmation_token>`：确认并执行大模型准备好的写操作。
 
 大模型只暴露一个聚合工具 `qqmail(action, message_id, query, limit, to, subject, body, cc, bcc)`，通过 `action` 参数选择动作，避免工具数量过多影响模型选择效率：
 
 - `action=list`：列出最近邮件，可传 `limit`。
 - `action=read`：读取指定邮件，传 `message_id`。
 - `action=search`：搜索邮件，传 `query`。
-- `action=send`：准备发送邮件，传 `to`、`subject`、`body`，可传 `cc`、`bcc`。
-- `action=reply`：准备回复邮件，传 `message_id`、`body`，可传 `cc`。
-- `action=forward`：准备转发邮件，传 `message_id`、`to`，可传 `body`。
-- `action=trash`：准备移动到废纸篓，传 `message_id`。
+- `action=send`：发送邮件，传 `to`、`subject`、`body`，可传 `cc`、`bcc`。
+- `action=reply`：回复邮件，传 `message_id`、`body`，可传 `cc`。
+- `action=forward`：转发邮件，传 `message_id`、`to`，可传 `body`。
+- `action=trash`：移动到废纸篓，传 `message_id`。
 
 参数说明：
 
@@ -114,7 +113,7 @@ npm install -g @tencent-qqmail/agently-cli
 - `cc`：抄送人列表，用逗号、分号或换行分隔。
 - `bcc`：密送人列表，只用于发送邮件。
 
-发送、回复、转发和删除都不会由模型单次工具调用直接完成。模型第一次调用只会保存待确认操作，管理员确认后插件才会复跑 CLI 并追加 `--confirmation-token`。
+当 `allow_write_operations` 开启时，发送、回复、转发和移动到废纸篓会由大模型工具调用直接执行；关闭时仅允许列出、读取和搜索邮件。
 
 ## 账号下线邮件通知
 
@@ -212,7 +211,7 @@ npm install -g @tencent-qqmail/agently-cli
 - 新增 AI 主动语音发送工具，可调用外部 TTS API 生成并发送语音。
 - AI 主动语音发送工具支持 `instruction` 风格指令，可用自然语言影响语速、情绪、语气和朗读风格。
 - AI 主动语音发送工具按 `cosyvoice_generate.py` 调用阿里云百炼 CosyVoice 远程接口。
-- 新增 QQ Agent 邮箱 CLI 工具，可登录、查看状态、读取/搜索邮件，并以管理员确认方式发送、回复、转发和删除邮件。
+- 新增 QQ Agent 邮箱 CLI 工具，可登录、查看状态、读取/搜索邮件，并在写操作开关开启后直接发送、回复、转发和移动邮件到废纸篓。
 - 新增 AIOCQHTTP 账号下线邮件通知功能。
 - 新增下线 Webhook 发送端与接收端，可在多个 AstrBot 实例之间推送下线提醒。
 - 新增角色资料库搜索工具，可按 ni/其他配置自动选择艾玛或希罗资料库。

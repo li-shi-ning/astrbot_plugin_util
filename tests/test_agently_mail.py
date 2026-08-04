@@ -11,18 +11,12 @@ if str(PLUGIN_ROOT) not in sys.path:
     sys.path.insert(0, str(PLUGIN_ROOT))
 
 from core.agently_mail import (  # noqa: E402
-    AgentlyMailClient,
     AgentlyMailConfig,
-    AgentlyMailError,
     AgentlyMailResult,
-    PendingMailConfirmation,
     agently_mail_env,
     build_agently_mail_config,
     build_recipient_args,
     extract_first_url,
-    load_pending_confirmations,
-    parse_confirmation_token,
-    save_pending_confirmations,
 )
 from main import util  # noqa: E402
 
@@ -30,31 +24,13 @@ from main import util  # noqa: E402
 class FakeMailClient:
     def __init__(self):
         self.calls = []
-        self.confirm_calls = []
 
-    async def first_step_write(self, action, args):
-        self.calls.append((action, args))
-        result = AgentlyMailResult(
+    async def run(self, args):
+        self.calls.append(args)
+        return AgentlyMailResult(
             command=("agently-cli", *args),
             returncode=0,
-            stdout='{"data":{"confirmation_token":"token-1"}}',
-            stderr="",
-        )
-        pending = PendingMailConfirmation(
-            token="token-1",
-            action=action,
-            command_args=tuple(args),
-            summary="summary",
-            created_at=1.0,
-        )
-        return result, pending
-
-    async def confirm(self, pending):
-        self.confirm_calls.append(pending)
-        return AgentlyMailResult(
-            command=("agently-cli", *pending.command_args, "--confirmation-token", pending.token),
-            returncode=0,
-            stdout="confirmed",
+            stdout="sent",
             stderr="",
         )
 
@@ -63,13 +39,6 @@ def make_plugin(config: AgentlyMailConfig, client=None):
     plugin = util.__new__(util)
     plugin.agently_mail_config = config
     plugin.agently_mail_client = client or FakeMailClient()
-    plugin.agently_mail_pending_confirmations = {}
-    plugin._saved = False
-
-    def save():
-        plugin._saved = True
-
-    plugin._save_agently_mail_pending_confirmations = save
     return plugin
 
 
@@ -137,45 +106,6 @@ def test_extract_first_url_keeps_original_url_opaque():
     assert extract_first_url(text) == url
 
 
-def test_parse_confirmation_token_from_nested_json_and_text():
-    assert parse_confirmation_token('{"data":{"confirmation_token":"abc"}}') == "abc"
-    assert parse_confirmation_token("confirmation_token: token-123") == "token-123"
-
-
-def test_pending_confirmations_round_trip(tmp_path):
-    path = tmp_path / "pending.json"
-    pending = PendingMailConfirmation(
-        token="token-1",
-        action="发送邮件",
-        command_args=("message", "+send", "--to", "a@example.com"),
-        summary="summary",
-        created_at=1.0,
-    )
-
-    save_pending_confirmations(path, {"token-1": pending})
-    loaded = load_pending_confirmations(path)
-
-    assert loaded["token-1"] == pending
-
-
-@pytest.mark.asyncio
-async def test_first_step_write_requires_confirmation_token(monkeypatch):
-    client = AgentlyMailClient(AgentlyMailConfig(enabled=True))
-
-    async def fake_run(args):
-        return AgentlyMailResult(
-            command=("agently-cli", *args),
-            returncode=0,
-            stdout="no token",
-            stderr="",
-        )
-
-    monkeypatch.setattr(client, "run", fake_run)
-
-    with pytest.raises(AgentlyMailError):
-        await client.first_step_write("发送邮件", ["message", "+send"])
-
-
 def test_agently_mail_admin_requires_configured_sender():
     plugin = make_plugin(
         AgentlyMailConfig(
@@ -208,9 +138,9 @@ async def test_qqmail_aggregated_tool_splits_recipients():
         body="Hello",
     )
 
-    assert "confirmation_token: token-1" in result
-    assert plugin.agently_mail_pending_confirmations["token-1"].action == "发送邮件"
-    assert client.calls[0][1] == [
+    assert "已执行" in result
+    assert "sent" in result
+    assert client.calls[0] == [
         "message",
         "+send",
         "--to",
@@ -222,7 +152,6 @@ async def test_qqmail_aggregated_tool_splits_recipients():
         "--body",
         "Hello",
     ]
-    assert plugin._saved is True
 
 
 @pytest.mark.asyncio
@@ -244,46 +173,3 @@ async def test_qqmail_aggregated_tool_respects_write_tool_switch():
     )
 
     assert "写操作已关闭" in result
-
-
-@pytest.mark.asyncio
-async def test_confirm_command_runs_pending_operation_and_removes_token():
-    client = FakeMailClient()
-    plugin = make_plugin(
-        AgentlyMailConfig(
-            enabled=True,
-            admin_qqs=("10001",),
-        ),
-        client,
-    )
-    pending = PendingMailConfirmation(
-        token="token-1",
-        action="发送邮件",
-        command_args=("message", "+send", "--to", "a@example.com"),
-        summary="summary",
-        created_at=1.0,
-    )
-    plugin.agently_mail_pending_confirmations["token-1"] = pending
-    event = make_event("10001")
-
-    await plugin.agently_mail_confirm_command(event, "token-1")
-
-    assert client.confirm_calls == [pending]
-    assert "token-1" not in plugin.agently_mail_pending_confirmations
-    assert plugin._saved is True
-    assert "已确认执行" in event.sent[0].chain[0].text
-
-
-@pytest.mark.asyncio
-async def test_confirm_command_rejects_non_admin():
-    plugin = make_plugin(
-        AgentlyMailConfig(
-            enabled=True,
-            admin_qqs=("10001",),
-        )
-    )
-    event = make_event("10002")
-
-    await plugin.agently_mail_confirm_command(event, "token-1")
-
-    assert "仅允许已配置管理员" in event.sent[0].chain[0].text

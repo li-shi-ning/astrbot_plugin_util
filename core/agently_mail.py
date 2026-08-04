@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import re
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 
@@ -14,11 +12,6 @@ QQMAIL_READ_ACTIONS = {"list", "read", "search"}
 QQMAIL_WRITE_ACTIONS = {"send", "reply", "forward", "trash"}
 
 URL_PATTERN = re.compile(r"https?://[^\s<>\"]+")
-CONFIRMATION_TOKEN_PATTERN = re.compile(
-    r"(?:confirmation_token|confirmation-token|confirmation token)[\"'\s:=]+([A-Za-z0-9._:-]+)",
-    re.IGNORECASE,
-)
-
 
 @dataclass(frozen=True)
 class AgentlyMailConfig:
@@ -46,15 +39,6 @@ class AgentlyMailResult:
     @property
     def text(self) -> str:
         return "\n".join(part for part in (self.stdout, self.stderr) if part).strip()
-
-
-@dataclass(frozen=True)
-class PendingMailConfirmation:
-    token: str
-    action: str
-    command_args: tuple[str, ...]
-    summary: str
-    created_at: float
 
 
 class AgentlyMailError(RuntimeError):
@@ -106,35 +90,6 @@ def extract_first_url(text: str) -> str:
     return match.group(0) if match else ""
 
 
-def parse_confirmation_token(text: str) -> str:
-    raw = str(text or "")
-    try:
-        data = json.loads(raw)
-    except ValueError:
-        data = None
-    token = _find_confirmation_token(data)
-    if token:
-        return token
-    match = CONFIRMATION_TOKEN_PATTERN.search(raw)
-    return match.group(1) if match else ""
-
-
-def _find_confirmation_token(value: Any) -> str:
-    if isinstance(value, dict):
-        for key, item in value.items():
-            if str(key) == "confirmation_token" and item:
-                return str(item)
-            found = _find_confirmation_token(item)
-            if found:
-                return found
-    if isinstance(value, list):
-        for item in value:
-            found = _find_confirmation_token(item)
-            if found:
-                return found
-    return ""
-
-
 def format_cli_result(result: AgentlyMailResult, *, max_chars: int = 6000) -> str:
     text = mask_agently_mail_output(result.text)
     if not text:
@@ -155,54 +110,6 @@ def build_recipient_args(flag: str, values: list[str] | tuple[str, ...] | str | 
     for value in raw_values:
         args.extend([flag, value])
     return args
-
-
-def save_pending_confirmations(path: Path, pending: dict[str, PendingMailConfirmation]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    data = {
-        token: {
-            "token": item.token,
-            "action": item.action,
-            "command_args": list(item.command_args),
-            "summary": item.summary,
-            "created_at": item.created_at,
-        }
-        for token, item in pending.items()
-    }
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-def load_pending_confirmations(path: Path) -> dict[str, PendingMailConfirmation]:
-    if not path.is_file():
-        return {}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    if not isinstance(data, dict):
-        return {}
-    pending: dict[str, PendingMailConfirmation] = {}
-    for token, item in data.items():
-        if not isinstance(item, dict):
-            continue
-        command_args = item.get("command_args")
-        if not isinstance(command_args, list):
-            continue
-        token_text = str(item.get("token") or token).strip()
-        if not token_text:
-            continue
-        pending[token_text] = PendingMailConfirmation(
-            token=token_text,
-            action=str(item.get("action") or ""),
-            command_args=tuple(str(arg) for arg in command_args),
-            summary=str(item.get("summary") or ""),
-            created_at=float(item.get("created_at") or 0),
-        )
-    return pending
-
-
-def confirmation_summary(action: str, command_args: list[str]) -> str:
-    return f"{action}: {' '.join(command_args)}"
 
 
 class AgentlyMailClient:
@@ -326,20 +233,3 @@ class AgentlyMailClient:
 
     async def search_messages(self, query: str) -> AgentlyMailResult:
         return await self.run(["message", "+search", "--q", query])
-
-    async def first_step_write(self, action: str, args: list[str]) -> tuple[AgentlyMailResult, PendingMailConfirmation]:
-        result = await self.run(args)
-        token = parse_confirmation_token(result.text)
-        if not token:
-            raise AgentlyMailError("agently-cli 未返回 confirmation_token，写操作未进入确认流程。")
-        pending = PendingMailConfirmation(
-            token=token,
-            action=action,
-            command_args=tuple(args),
-            summary=confirmation_summary(action, args),
-            created_at=asyncio.get_running_loop().time(),
-        )
-        return result, pending
-
-    async def confirm(self, pending: PendingMailConfirmation) -> AgentlyMailResult:
-        return await self.run([*pending.command_args, "--confirmation-token", pending.token])

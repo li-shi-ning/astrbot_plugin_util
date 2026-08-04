@@ -211,7 +211,7 @@
   "agently_mail": {
     "description": "QQ Agent 邮箱 CLI 工具",
     "type": "object",
-    "hint": "将 @tencent-qqmail/agently-cli 封装为插件指令和大模型工具。不安装 skill，不接 MCP；运行环境需自行安装 agently-cli。写操作会先生成 confirmation_token，必须由管理员发送 /QQ邮箱确认 后才会真正执行。",
+    "hint": "将 @tencent-qqmail/agently-cli 封装为插件指令和大模型工具。不安装 skill，不接 MCP；运行环境需自行安装 agently-cli。开启写操作后，大模型可直接发送、回复、转发和移动邮件到废纸篓。",
     "items": {
       "enable_agently_mail_feature": {
         "description": "是否启用 QQ Agent 邮箱功能。",
@@ -250,13 +250,13 @@
         "hint": "true / false"
       },
       "allow_write_operations": {
-        "description": "是否允许大模型准备发送、回复、转发和删除邮件。即使开启，也必须由管理员二次确认才会真正执行。",
+        "description": "是否允许大模型直接发送、回复、转发和移动邮件到废纸篓。",
         "type": "bool",
         "default": false,
         "hint": "true / false"
       },
       "admin_qqs": {
-        "description": "允许使用 /QQ邮箱登录、/QQ邮箱状态、/QQ邮箱确认 的管理员 QQ 列表。留空时不会允许任何人执行人工管理指令。",
+        "description": "允许使用 /QQ邮箱登录 和 /QQ邮箱状态 的管理员 QQ 列表。留空时不会允许任何人执行人工管理指令。",
         "type": "list",
         "default": [],
         "items": {
