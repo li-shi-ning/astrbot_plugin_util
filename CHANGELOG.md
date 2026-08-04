@@ -1,3 +1,8 @@
+# v1.6.34
+
+- 聚合 QQ Agent 邮箱 LLM 工具：将 7 个独立 `qqmail_*` 工具合并为单个 `qqmail(action, ...)`，降低工具数量和模型选择成本。
+- 保留原有读写能力与管理员二次确认流程；读操作通过 `action=list/read/search`，写操作通过 `action=send/reply/forward/trash`。
+
 # v1.6.33
 
 - 新增 QQ Agent 邮箱 CLI 工具：封装 `@tencent-qqmail/agently-cli`，提供 `/QQ邮箱登录`、`/QQ邮箱状态`、`/QQ邮箱确认` 管理指令。

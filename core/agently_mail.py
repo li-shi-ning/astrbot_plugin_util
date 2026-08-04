@@ -9,22 +9,9 @@ from pathlib import Path
 from typing import Any
 
 
-QQMAIL_TOOL_NAMES = {
-    "qqmail_list_messages",
-    "qqmail_read_message",
-    "qqmail_search_messages",
-    "qqmail_send_message",
-    "qqmail_reply_message",
-    "qqmail_forward_message",
-    "qqmail_trash_message",
-}
-
-QQMAIL_WRITE_TOOL_NAMES = {
-    "qqmail_send_message",
-    "qqmail_reply_message",
-    "qqmail_forward_message",
-    "qqmail_trash_message",
-}
+QQMAIL_TOOL_NAME = "qqmail"
+QQMAIL_READ_ACTIONS = {"list", "read", "search"}
+QQMAIL_WRITE_ACTIONS = {"send", "reply", "forward", "trash"}
 
 URL_PATTERN = re.compile(r"https?://[^\s<>\"]+")
 CONFIRMATION_TOKEN_PATTERN = re.compile(

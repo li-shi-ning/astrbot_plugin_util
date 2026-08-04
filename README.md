@@ -93,15 +93,15 @@ npm install -g @tencent-qqmail/agently-cli
 - `/QQ邮箱状态`：查看当前授权邮箱。
 - `/QQ邮箱确认 <confirmation_token>`：确认并执行大模型准备好的写操作。
 
-大模型工具：
+大模型只暴露一个聚合工具 `qqmail`，通过 `action` 参数选择动作，避免工具数量过多影响模型选择效率：
 
-- `qqmail_list_messages(limit)`：列出最近邮件。
-- `qqmail_read_message(message_id)`：读取指定邮件。
-- `qqmail_search_messages(query)`：搜索邮件。
-- `qqmail_send_message(to, subject, body, cc, bcc)`：准备发送邮件，返回确认 token。
-- `qqmail_reply_message(message_id, body, cc)`：准备回复邮件，返回确认 token。
-- `qqmail_forward_message(message_id, to, body)`：准备转发邮件，返回确认 token。
-- `qqmail_trash_message(message_id)`：准备移动到废纸篓，返回确认 token。
+- `action=list`：列出最近邮件，可传 `limit`。
+- `action=read`：读取指定邮件，传 `message_id`。
+- `action=search`：搜索邮件，传 `query`。
+- `action=send`：准备发送邮件，传 `to`、`subject`、`body`，可传 `cc`、`bcc`。
+- `action=reply`：准备回复邮件，传 `message_id`、`body`，可传 `cc`。
+- `action=forward`：准备转发邮件，传 `message_id`、`to`，可传 `body`。
+- `action=trash`：准备移动到废纸篓，传 `message_id`。
 
 发送、回复、转发和删除都不会由模型单次工具调用直接完成。模型第一次调用只会保存待确认操作，管理员确认后插件才会复跑 CLI 并追加 `--confirmation-token`。
 

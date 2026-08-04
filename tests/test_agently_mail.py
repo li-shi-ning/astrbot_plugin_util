@@ -189,7 +189,7 @@ def test_agently_mail_admin_requires_configured_sender():
 
 
 @pytest.mark.asyncio
-async def test_qqmail_send_message_creates_pending_confirmation():
+async def test_qqmail_aggregated_tool_splits_recipients():
     client = FakeMailClient()
     plugin = make_plugin(
         AgentlyMailConfig(
@@ -200,11 +200,12 @@ async def test_qqmail_send_message_creates_pending_confirmation():
         client,
     )
 
-    result = await plugin.qqmail_send_message(
+    result = await plugin.qqmail(
         make_event(),
-        "a@example.com,b@example.com",
-        "Hi",
-        "Hello",
+        "send",
+        to="a@example.com,b@example.com",
+        subject="Hi",
+        body="Hello",
     )
 
     assert "confirmation_token: token-1" in result
@@ -225,7 +226,7 @@ async def test_qqmail_send_message_creates_pending_confirmation():
 
 
 @pytest.mark.asyncio
-async def test_qqmail_send_message_respects_write_tool_switch():
+async def test_qqmail_aggregated_tool_respects_write_tool_switch():
     plugin = make_plugin(
         AgentlyMailConfig(
             enabled=True,
@@ -234,7 +235,13 @@ async def test_qqmail_send_message_respects_write_tool_switch():
         )
     )
 
-    result = await plugin.qqmail_send_message(make_event(), "a@example.com", "Hi", "Hello")
+    result = await plugin.qqmail(
+        make_event(),
+        "send",
+        to="a@example.com",
+        subject="Hi",
+        body="Hello",
+    )
 
     assert "写操作已关闭" in result
 
