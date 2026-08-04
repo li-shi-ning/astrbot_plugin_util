@@ -208,61 +208,34 @@
       }
     }
   },
-  "agently_mail": {
-    "description": "QQ Agent 邮箱 CLI 工具",
+  "qq_mail_tool": {
+    "description": "QQ 邮箱 AI 工具",
     "type": "object",
-    "hint": "将 @tencent-qqmail/agently-cli 封装为插件指令和大模型工具。不安装 skill，不接 MCP；运行环境需自行安装 agently-cli。开启写操作后，大模型可直接发送、回复、转发和移动邮件到废纸篓。",
+    "hint": "向大模型暴露 qqmail 工具。发信使用 QQ SMTP，状态、列信、读信、搜索和删除使用 QQ IMAP。此配置与账号下线邮件通知互相独立。需要在 QQ 邮箱网页端开启 POP3/IMAP/SMTP 服务并填写授权码。",
     "items": {
-      "enable_agently_mail_feature": {
-        "description": "是否启用 QQ Agent 邮箱功能。",
+      "enable_qqmail_tool": {
+        "description": "是否启用 QQ 邮箱 AI 工具。关闭后不会向大模型暴露 qqmail。",
         "type": "bool",
         "default": false,
         "hint": "true / false"
       },
-      "cli_path": {
-        "description": "agently-cli 命令路径。通常保持默认即可；如果未加入 PATH，可填写绝对路径。",
+      "sender": {
+        "description": "QQ 邮箱地址。用于 SMTP 发信和 IMAP 登录。",
         "type": "string",
-        "default": "agently-cli",
-        "hint": "agently-cli"
+        "default": "",
+        "hint": "123456@qq.com"
       },
-      "workspace": {
-        "description": "AGENTLY_WORKSPACE 工作区名称，用于隔离邮箱授权身份。",
+      "QQ_password": {
+        "description": "QQ 邮箱授权码，不是 QQ 登录密码。需要在 QQ 邮箱网页端开启 POP3/IMAP/SMTP 服务后生成。",
         "type": "string",
-        "default": "astrbot_plugin_util",
-        "hint": "astrbot_plugin_util"
-      },
-      "timeout_seconds": {
-        "description": "CLI 命令超时时间，范围 5-600 秒。",
-        "type": "int",
-        "default": 60,
-        "hint": "60"
+        "default": "",
+        "hint": "QQ 邮箱授权码"
       },
       "list_default_limit": {
-        "description": "列出最近邮件的默认数量，范围 1-50。",
+        "description": "列出或搜索邮件时默认返回的邮件数量，范围 1-50。",
         "type": "int",
         "default": 10,
         "hint": "10"
-      },
-      "enable_agently_mail_tools": {
-        "description": "是否向大模型暴露 QQ Agent 邮箱工具。",
-        "type": "bool",
-        "default": false,
-        "hint": "true / false"
-      },
-      "allow_write_operations": {
-        "description": "是否允许大模型直接发送、回复、转发和移动邮件到废纸篓。",
-        "type": "bool",
-        "default": false,
-        "hint": "true / false"
-      },
-      "admin_qqs": {
-        "description": "允许使用 /QQ邮箱登录 和 /QQ邮箱状态 的管理员 QQ 列表。留空时不会允许任何人执行人工管理指令。",
-        "type": "list",
-        "default": [],
-        "items": {
-          "type": "string"
-        },
-        "hint": "123456789"
       }
     }
   },

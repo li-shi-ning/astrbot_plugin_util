@@ -1,3 +1,10 @@
+# v1.6.37
+
+- 废弃 QQ Agent `agently-cli` 邮箱方案，改为直接使用 QQ 邮箱授权码：SMTP 负责发信，IMAP 负责状态、列信、读信、搜索和移动到废纸篓。
+- 新增独立 `qq_mail_tool` 配置项，与 `offline_email_alert` 下线通知配置完全分离，可使用不同邮箱和授权码。
+- 移除 `/QQ邮箱登录`、`/QQ邮箱状态` 人工指令和 `core/agently_mail.py` CLI 封装。
+- `qqmail` 聚合工具支持 `status/list/read/search/send/trash`。
+
 # v1.6.36
 
 - 移除 QQ Agent 邮箱写操作二次确认流程：`qqmail` 在 `allow_write_operations` 开启后会直接执行发送、回复、转发和移动到废纸篓。

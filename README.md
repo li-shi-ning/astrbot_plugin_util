@@ -68,52 +68,50 @@ AstrBot 当前配置界面没有目录选择器，因此 `audio_directory` 使�
 
 启用且配置完整后，模型会看到 `send_voice_to_user(text, language, instruction)` 工具。工具成功发送语音后会提醒模型本轮不要再用普通文本重复同一段内容。
 
-## QQ Agent 邮箱 CLI 工具
+## QQ 邮箱 AI 工具
 
-插件可把 `@tencent-qqmail/agently-cli` 封装为 AstrBot 指令和大模型工具。该功能不安装 skill，不接 MCP；运行环境需要自行安装 Node.js 和 `agently-cli`：
+插件可向大模型暴露 `qqmail` 工具。该功能不依赖 `agently-cli`，发信走 QQ SMTP，状态、列信、读信、搜索和删除走 QQ IMAP。
 
-```bash
-npm install -g @tencent-qqmail/agently-cli
-```
+在 QQ 邮箱网页端申请授权码：
 
-在插件配置页的 `agently_mail` 中配置：
+1. 登录 QQ 邮箱网页版。
+2. 进入“设置” → “账号/帐户”。
+3. 找到 `POP3/IMAP/SMTP/Exchange/CardDAV/CalDAV服务`。
+4. 开启需要的服务：
+   - 发邮件：开启 `SMTP` 或 `POP3/SMTP`。
+   - 读邮件、列邮件、搜索邮件、移动到废纸篓：开启 `IMAP/SMTP`。
+5. 按页面提示生成授权码。配置里填写授权码，不填写 QQ 登录密码。
 
-- `enable_agently_mail_feature`：是否启用 QQ Agent 邮箱功能，默认关闭。
-- `cli_path`：`agently-cli` 命令路径，通常保持默认即可。
-- `workspace`：`AGENTLY_WORKSPACE` 工作区，默认 `astrbot_plugin_util`，用于隔离授权身份。
-- `timeout_seconds`：CLI 命令超时时间。
-- `list_default_limit`：列出最近邮件的默认数量。
-- `enable_agently_mail_tools`：是否向大模型暴露邮箱工具。
-- `allow_write_operations`：是否允许大模型直接发送、回复、转发和移动邮件到废纸篓。
-- `admin_qqs`：允许使用 `/QQ邮箱登录`、`/QQ邮箱状态` 的管理员 QQ 列表。留空时不会允许任何人执行人工管理指令。
+在插件配置页的 `qq_mail_tool` 中配置：
 
-管理指令：
+- `enable_qqmail_tool`：是否向大模型暴露 QQ 邮箱工具，默认关闭。
+- `sender`：QQ 邮箱地址，用于 SMTP 发信和 IMAP 登录。
+- `QQ_password`：QQ 邮箱授权码，不是 QQ 登录密码。
+- `list_default_limit`：列出或搜索邮件时默认返回的邮件数量，范围 1-50。
 
-- `/QQ邮箱登录`：管理员触发 OAuth 登录。机器人会发送原始授权 URL，浏览器完成授权后自动验证邮箱。
-- `/QQ邮箱状态`：查看当前授权邮箱。
+该配置与 `offline_email_alert` 下线通知配置完全独立，可以使用不同邮箱和不同授权码。
 
 大模型只暴露一个聚合工具 `qqmail(action, message_id, query, limit, to, subject, body, cc, bcc)`，通过 `action` 参数选择动作，避免工具数量过多影响模型选择效率：
 
+- `action=status`：检查 IMAP 登录状态并返回 INBOX 邮件数量。
 - `action=list`：列出最近邮件，可传 `limit`。
 - `action=read`：读取指定邮件，传 `message_id`。
 - `action=search`：搜索邮件，传 `query`。
 - `action=send`：发送邮件，传 `to`、`subject`、`body`，可传 `cc`、`bcc`。
-- `action=reply`：回复邮件，传 `message_id`、`body`，可传 `cc`。
-- `action=forward`：转发邮件，传 `message_id`、`to`，可传 `body`。
 - `action=trash`：移动到废纸篓，传 `message_id`。
 
 参数说明：
 
-- `message_id`：邮件 ID，例如 `msg_xxx`，用于读取、回复、转发和删除。
+- `message_id`：邮件 ID，由 `list` 或 `search` 返回，用于读取和移动到废纸篓。
 - `query`：搜索关键词，只用于搜索邮件。
 - `limit`：列出最近邮件的数量，填 `0` 使用配置默认值。
 - `to`：收件人列表，用逗号、分号或换行分隔。
 - `subject`：新邮件主题，只用于发送邮件。
-- `body`：邮件正文；发送和回复必填，转发时可作为补充说明。
+- `body`：邮件正文，发送邮件必填。
 - `cc`：抄送人列表，用逗号、分号或换行分隔。
 - `bcc`：密送人列表，只用于发送邮件。
 
-当 `allow_write_operations` 开启时，发送、回复、转发和移动到废纸篓会由大模型工具调用直接执行；关闭时仅允许列出、读取和搜索邮件。
+工具启用且配置完整后，大模型可直接执行上述邮箱动作，不再需要人工登录指令或二次确认。
 
 ## 账号下线邮件通知
 
@@ -211,7 +209,7 @@ npm install -g @tencent-qqmail/agently-cli
 - 新增 AI 主动语音发送工具，可调用外部 TTS API 生成并发送语音。
 - AI 主动语音发送工具支持 `instruction` 风格指令，可用自然语言影响语速、情绪、语气和朗读风格。
 - AI 主动语音发送工具按 `cosyvoice_generate.py` 调用阿里云百炼 CosyVoice 远程接口。
-- 新增 QQ Agent 邮箱 CLI 工具，可登录、查看状态、读取/搜索邮件，并在写操作开关开启后直接发送、回复、转发和移动邮件到废纸篓。
+- 新增 QQ 邮箱 AI 工具，可通过独立授权码配置发送、查看状态、读取、搜索和移动邮件到废纸篓。
 - 新增 AIOCQHTTP 账号下线邮件通知功能。
 - 新增下线 Webhook 发送端与接收端，可在多个 AstrBot 实例之间推送下线提醒。
 - 新增角色资料库搜索工具，可按 ni/其他配置自动选择艾玛或希罗资料库。

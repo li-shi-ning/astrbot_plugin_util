@@ -36,16 +36,6 @@ from astrbot.core.utils.astrbot_path import get_astrbot_plugin_data_path
 # ====== 核心库 ======
 try:
     from .core.Filter import register_pack_type
-    from .core.agently_mail import (
-        QQMAIL_READ_ACTIONS,
-        QQMAIL_TOOL_NAME,
-        QQMAIL_WRITE_ACTIONS,
-        AgentlyMailClient,
-        AgentlyMailError,
-        build_agently_mail_config,
-        build_recipient_args,
-        format_cli_result,
-    )
     from .core.ai_voice import (
         AI_VOICE_TOOL_NAME,
         AiVoiceClient,
@@ -95,9 +85,18 @@ try:
     )
     from .core.offline_email_alert import (
         OFFLINE_EMAIL_SUBJECT,
+        QQMAIL_ACTIONS,
+        QQMAIL_TOOL_NAME,
         build_offline_email_alert_config,
+        build_qqmail_tool_config,
         format_offline_email_content,
         is_bot_offline_notice,
+        parse_email_addresses,
+        qqmail_list_async,
+        qqmail_read_async,
+        qqmail_search_async,
+        qqmail_status_async,
+        qqmail_trash_async,
         send_qq_email_async,
     )
     from .core.offline_webhook_alert import (
@@ -123,16 +122,6 @@ try:
     )
 except ImportError:
     from core.Filter import register_pack_type
-    from core.agently_mail import (
-        QQMAIL_READ_ACTIONS,
-        QQMAIL_TOOL_NAME,
-        QQMAIL_WRITE_ACTIONS,
-        AgentlyMailClient,
-        AgentlyMailError,
-        build_agently_mail_config,
-        build_recipient_args,
-        format_cli_result,
-    )
     from core.ai_voice import (
         AI_VOICE_TOOL_NAME,
         AiVoiceClient,
@@ -182,9 +171,18 @@ except ImportError:
     )
     from core.offline_email_alert import (
         OFFLINE_EMAIL_SUBJECT,
+        QQMAIL_ACTIONS,
+        QQMAIL_TOOL_NAME,
         build_offline_email_alert_config,
+        build_qqmail_tool_config,
         format_offline_email_content,
         is_bot_offline_notice,
+        parse_email_addresses,
+        qqmail_list_async,
+        qqmail_read_async,
+        qqmail_search_async,
+        qqmail_status_async,
+        qqmail_trash_async,
         send_qq_email_async,
     )
     from core.offline_webhook_alert import (
@@ -225,7 +223,6 @@ PLUGIN_DATA_DIR = (Path(get_astrbot_plugin_data_path()) / "astrbot_plugin_util")
 NETEASE_LOGIN_DATA_DIR = (PLUGIN_DATA_DIR / "netease_login").resolve()
 NETEASE_COOKIE_PATH = (NETEASE_LOGIN_DATA_DIR / "cookie.json").resolve()
 AI_VOICE_DATA_DIR = (PLUGIN_DATA_DIR / "ai_voice").resolve()
-AGENTLY_MAIL_DATA_DIR = (PLUGIN_DATA_DIR / "agently_mail").resolve()
 ROLEPLAY_KNOWLEDGE_ROOT = (PLUGIN_ROOT / "cs" / "output").resolve()
 ROLEPLAY_KNOWLEDGE_DB_RELATIVE_PATH = (
     Path("roleplay_knowledge") / ROLEPLAY_KNOWLEDGE_DB_FILENAME
@@ -234,7 +231,7 @@ ROLEPLAY_KNOWLEDGE_DB_PATH = ROLEPLAY_KNOWLEDGE_DB_RELATIVE_PATH
 FORWARD_NODES_BATCH_SIZE = 100
 
 
-@register("util", "lishinig", "私人插件", "1.6.36")
+@register("util", "lishinig", "私人插件", "1.6.37")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -414,8 +411,8 @@ class util(Star):
         group_history_config = config_section("group_history")
         music_search_config = config_section("music_search")
         ai_voice_config = config_section("ai_voice")
-        agently_mail_config = config_section("agently_mail")
         offline_email_alert_config = config_section("offline_email_alert")
+        qq_mail_tool_config = config_section("qq_mail_tool")
         roleplay_knowledge_config = config_section("roleplay_knowledge")
 
         self.enable_history_chunking_feature = config_value(
@@ -539,6 +536,7 @@ class util(Star):
         self.offline_email_alert_config = build_offline_email_alert_config(
             offline_email_alert_config
         )
+        self.qqmail_tool_config = build_qqmail_tool_config(qq_mail_tool_config)
         self.offline_webhook_senders = load_offline_webhook_senders(config)
         self.offline_webhook_receiver_server = load_offline_webhook_receiver_server(
             config
@@ -562,17 +560,13 @@ class util(Star):
             f"max_text_chars={self.ai_voice_config.max_text_chars}, "
             f"max_instruction_chars={self.ai_voice_config.max_instruction_chars}"
         )
-        self.agently_mail_config = build_agently_mail_config(agently_mail_config)
-        self.agently_mail_client = AgentlyMailClient(self.agently_mail_config)
         logger.info(
-            "[util] agently mail: "
-            f"enabled={self.agently_mail_config.enabled}, "
-            f"ready={self.agently_mail_config.ready}, "
-            f"cli_path={self.agently_mail_config.cli_path}, "
-            f"workspace={self.agently_mail_config.workspace}, "
-            f"tools={self.agently_mail_config.enable_llm_tools}, "
-            f"write={self.agently_mail_config.allow_write_operations}, "
-            f"admins={len(self.agently_mail_config.admin_qqs)}"
+            "[util] QQ mail tool: "
+            f"enabled={self.qqmail_tool_config.enabled}, "
+            f"ready={self.qqmail_tool_config.ready}, "
+            f"sender_configured={bool(self.qqmail_tool_config.sender)}, "
+            f"password_configured={bool(self.qqmail_tool_config.QQ_password)}, "
+            f"default_limit={self.qqmail_tool_config.list_default_limit}"
         )
         self.music_search_config = build_music_config(music_search_config)
         persisted_music_cookie = load_persisted_music_cookie(NETEASE_COOKIE_PATH)
@@ -991,69 +985,6 @@ class util(Star):
                 return
 
         await event.send(MessageChain([Comp.Plain(MUSIC_LOGIN_TIMEOUT_MESSAGE)]))
-
-    @filter.command("QQ邮箱登录")
-    async def login_agently_mail_command(self, event: AstrMessageEvent):
-        """Start QQ Agent mail OAuth login with agently-cli."""
-        event.stop_event()
-        if not self._agently_mail_is_admin(event):
-            await event.send(MessageChain([Comp.Plain("QQ邮箱工具仅允许已配置管理员使用。")]))
-            return
-        if not self.agently_mail_config.enabled:
-            await event.send(MessageChain([Comp.Plain("QQ Agent 邮箱功能已关闭。")]))
-            return
-
-        async def send_auth_url(url: str):
-            await event.send(
-                MessageChain(
-                    [
-                        Comp.Plain(
-                            "请点击或复制以下链接在浏览器中完成授权：\n"
-                            f"```\n{url}\n```"
-                        )
-                    ]
-                )
-            )
-
-        try:
-            await self.agently_mail_client.login_and_capture_url(send_auth_url)
-            me_result = await self.agently_mail_client.me()
-        except AgentlyMailError as exc:
-            logger.warning("[util] QQ邮箱登录失败: %s", exc)
-            await event.send(MessageChain([Comp.Plain(f"QQ邮箱登录失败：{exc}")]))
-            return
-
-        mailbox = format_cli_result(me_result, max_chars=1000)
-        await event.send(
-            MessageChain(
-                [
-                    Comp.Plain(
-                        f"邮箱地址 {mailbox} 已授权成功，可以用它来收发邮件了\n"
-                        "你可以试试以下指令：\n"
-                        "帮我发一封邮件。\n"
-                        "我最近收到了哪些邮件？\n"
-                        "帮我整理最近收到的邮件。"
-                    )
-                ]
-            )
-        )
-
-    @filter.command("QQ邮箱状态")
-    async def agently_mail_status_command(self, event: AstrMessageEvent):
-        """Check current QQ Agent mail identity."""
-        event.stop_event()
-        if not self._agently_mail_is_admin(event):
-            await event.send(MessageChain([Comp.Plain("QQ邮箱工具仅允许已配置管理员使用。")]))
-            return
-        if not self.agently_mail_config.enabled:
-            await event.send(MessageChain([Comp.Plain("QQ Agent 邮箱功能已关闭。")]))
-            return
-        try:
-            result = await self.agently_mail_client.me()
-        except AgentlyMailError as exc:
-            await event.send(MessageChain([Comp.Plain(f"QQ邮箱状态检查失败：{exc}")]))
-            return
-        await event.send(MessageChain([Comp.Plain(format_cli_result(result))]))
 
     @filter.command("点歌", alias={"music", "听歌", "网易云"})
     async def search_music_command(self, event: AstrMessageEvent, keyword: str = ""):
@@ -1593,11 +1524,10 @@ class util(Star):
         if ai_voice_config is None or not ai_voice_config.ready:
             self._remove_tool_from_request(req, AI_VOICE_TOOL_NAME)
 
-        agently_mail_config = getattr(self, "agently_mail_config", None)
+        mail_config = getattr(self, "qqmail_tool_config", None)
         if (
-            agently_mail_config is None
-            or not agently_mail_config.ready
-            or not agently_mail_config.enable_llm_tools
+            mail_config is None
+            or not mail_config.ready
         ):
             self._remove_tool_from_request(req, QQMAIL_TOOL_NAME)
 
@@ -2114,44 +2044,38 @@ class util(Star):
         """Use QQ Mail.
 
         Choose one action:
+        - status: check mailbox login status.
         - list: list recent messages.
         - read: read one message.
         - search: search messages.
         - send: send a new email.
-        - reply: reply to a message.
-        - forward: forward a message.
         - trash: move a message to trash.
 
         Args:
-            action(string): Required. One of list, read, search, send, reply, forward, trash.
-            message_id(string): Message id. Used by read, reply, forward, and trash.
+            action(string): Required. One of status, list, read, search, send, trash.
+            message_id(string): Message id. Used by read and trash.
             query(string): Search text. Used by search.
             limit(number): Number of recent messages to list. Use 0 for the default.
-            to(string): Recipient addresses for send or forward. Separate multiple addresses with comma, semicolon, or newline.
+            to(string): Recipient addresses for send. Separate multiple addresses with comma, semicolon, or newline.
             subject(string): Email subject. Used by send.
-            body(string): Email body. Used by send and reply; optional when forwarding.
-            cc(string): CC addresses for send or reply. Separate multiple addresses with comma, semicolon, or newline.
+            body(string): Email body. Used by send.
+            cc(string): CC addresses for send. Separate multiple addresses with comma, semicolon, or newline.
             bcc(string): BCC addresses for send. Separate multiple addresses with comma, semicolon, or newline.
         """
         action = str(action or "").strip().lower()
-        if action in QQMAIL_READ_ACTIONS:
-            return await self._agently_mail_run_read_action(
-                action=action,
-                message_id=message_id,
-                query=query,
-                limit=limit,
-            )
-        if action in QQMAIL_WRITE_ACTIONS:
-            return await self._agently_mail_run_write_action(
-                action=action,
-                message_id=message_id,
-                to=to,
-                subject=subject,
-                body=body,
-                cc=cc,
-                bcc=bcc,
-            )
-        return "不支持的 QQ 邮箱 action。可用：list/read/search/send/reply/forward/trash。"
+        if action not in QQMAIL_ACTIONS:
+            return "不支持的 QQ 邮箱 action。可用：status/list/read/search/send/trash。"
+        return await self._qqmail_run_action(
+            action=action,
+            message_id=message_id,
+            query=query,
+            limit=limit,
+            to=to,
+            subject=subject,
+            body=body,
+            cc=cc,
+            bcc=bcc,
+        )
 
     @filter.llm_tool(name="read_current_history")
     async def read_current_history(
@@ -2529,140 +2453,95 @@ class util(Star):
             return self._make_json_safe(vars(value), seen)
         return str(value)
 
-    def _agently_mail_is_admin(self, event: AstrMessageEvent) -> bool:
-        admins = getattr(self.agently_mail_config, "admin_qqs", ())
-        sender_id = str(event.get_sender_id() or "").strip()
-        return bool(sender_id and sender_id in set(admins))
-
-    def _agently_mail_tool_available(self, *, write: bool) -> tuple[bool, str]:
-        config = getattr(self, "agently_mail_config", None)
+    def _qqmail_tool_available(self) -> tuple[bool, str]:
+        config = getattr(self, "qqmail_tool_config", None)
         if config is None or not config.enabled:
-            return False, "QQ Agent 邮箱功能已关闭。"
+            return False, "QQ邮箱工具已关闭。"
         if not config.ready:
-            return False, "QQ Agent 邮箱 CLI 路径未配置。"
-        if not config.enable_llm_tools:
-            return False, "QQ Agent 邮箱 LLM 工具已关闭。"
-        if write and not config.allow_write_operations:
-            return False, "QQ Agent 邮箱写操作已关闭。"
+            return False, "QQ邮箱工具配置不完整，请配置 qq_mail_tool.sender 和 QQ_password。"
         return True, ""
 
-    async def _agently_mail_run_read_action(
+    async def _qqmail_run_action(
         self,
         *,
         action: str,
         message_id: str = "",
         query: str = "",
         limit: int = 0,
-    ) -> str:
-        ok, message = self._agently_mail_tool_available(write=False)
-        if not ok:
-            return message
-        try:
-            if action == "list":
-                resolved_limit = max(
-                    1,
-                    min(50, int(limit or self.agently_mail_config.list_default_limit)),
-                )
-                result = await self.agently_mail_client.list_messages(resolved_limit)
-            elif action == "read":
-                message_id = str(message_id or "").strip()
-                if not message_id:
-                    return "请提供要读取的 message_id。"
-                result = await self.agently_mail_client.read_message(message_id)
-            elif action == "search":
-                query = str(query or "").strip()
-                if not query:
-                    return "请提供搜索关键词。"
-                result = await self.agently_mail_client.search_messages(query)
-            else:
-                return "不支持的 QQ 邮箱读取 action。"
-        except AgentlyMailError as exc:
-            return f"QQ邮箱{action}执行失败：{exc}"
-        return format_cli_result(result)
-
-    async def _agently_mail_run_write_action(
-        self,
-        *,
-        action: str,
-        message_id: str = "",
         to: str = "",
         subject: str = "",
         body: str = "",
         cc: str = "",
         bcc: str = "",
     ) -> str:
-        if action == "send":
-            if (
-                not build_recipient_args("--to", to)
-                or not str(subject or "").strip()
-                or not str(body or "").strip()
-            ):
-                return "请补全收件人、主题和正文后再发送邮件。"
-            args = [
-                "message",
-                "+send",
-                *build_recipient_args("--to", to),
-                *build_recipient_args("--cc", cc),
-                *build_recipient_args("--bcc", bcc),
-                "--subject",
-                str(subject or ""),
-                "--body",
-                str(body or ""),
-            ]
-            return await self._agently_mail_execute_write("发送邮件", args)
-
-        if action == "reply":
-            if not str(message_id or "").strip() or not str(body or "").strip():
-                return "请补全 message_id 和回复正文后再回复邮件。"
-            args = [
-                "message",
-                "+reply",
-                "--id",
-                str(message_id or "").strip(),
-                *build_recipient_args("--cc", cc),
-                "--body",
-                str(body or ""),
-            ]
-            return await self._agently_mail_execute_write("回复邮件", args)
-
-        if action == "forward":
-            if not str(message_id or "").strip() or not build_recipient_args("--to", to):
-                return "请补全 message_id 和转发收件人后再转发邮件。"
-            args = [
-                "message",
-                "+forward",
-                "--id",
-                str(message_id or "").strip(),
-                *build_recipient_args("--to", to),
-            ]
-            if str(body or "").strip():
-                args.extend(["--body", str(body or "")])
-            return await self._agently_mail_execute_write("转发邮件", args)
-
-        if action == "trash":
-            if not str(message_id or "").strip():
-                return "请提供要删除的 message_id。"
-            return await self._agently_mail_execute_write(
-                "删除邮件到废纸篓",
-                ["message", "+trash", "--id", str(message_id or "").strip()],
-            )
-
-        return "不支持的 QQ 邮箱写入 action。"
-
-    async def _agently_mail_execute_write(
-        self,
-        action: str,
-        args: list[str],
-    ) -> str:
-        ok, message = self._agently_mail_tool_available(write=True)
+        ok, message = self._qqmail_tool_available()
         if not ok:
             return message
+        config = self.qqmail_tool_config
         try:
-            result = await self.agently_mail_client.run(args)
-        except AgentlyMailError as exc:
+            if action == "status":
+                return await qqmail_status_async(
+                    sender=config.sender,
+                    password=config.QQ_password,
+                )
+            if action == "list":
+                resolved_limit = max(1, min(50, int(limit or config.list_default_limit)))
+                return await qqmail_list_async(
+                    sender=config.sender,
+                    password=config.QQ_password,
+                    limit=resolved_limit,
+                )
+            if action == "read":
+                message_id = str(message_id or "").strip()
+                if not message_id:
+                    return "请提供要读取的 message_id。"
+                return await qqmail_read_async(
+                    sender=config.sender,
+                    password=config.QQ_password,
+                    message_id=message_id,
+                )
+            if action == "search":
+                query = str(query or "").strip()
+                if not query:
+                    return "请提供搜索关键词。"
+                resolved_limit = max(1, min(50, int(limit or config.list_default_limit)))
+                return await qqmail_search_async(
+                    sender=config.sender,
+                    password=config.QQ_password,
+                    query=query,
+                    limit=resolved_limit,
+                )
+            if action == "send":
+                if (
+                    not parse_email_addresses(to)
+                    or not str(subject or "").strip()
+                    or not str(body or "").strip()
+                ):
+                    return "请补全收件人、主题和正文后再发送邮件。"
+                await send_qq_email_async(
+                    sender=config.sender,
+                    password=config.QQ_password,
+                    receiver=to,
+                    subject=str(subject or ""),
+                    content=str(body or ""),
+                    cc=cc,
+                    bcc=bcc,
+                )
+                return "QQ邮箱邮件已发送。"
+            if action == "trash":
+                message_id = str(message_id or "").strip()
+                if not message_id:
+                    return "请提供要删除的 message_id。"
+                return await qqmail_trash_async(
+                    sender=config.sender,
+                    password=config.QQ_password,
+                    message_id=message_id,
+                )
+        except Exception as exc:
+            logger.warning("[util] QQ mail tool action failed: action=%s error=%s", action, exc)
             return f"QQ邮箱{action}执行失败：{exc}"
 
-        return f"QQ邮箱{action}已执行：\n{format_cli_result(result)}"
+        return "不支持的 QQ 邮箱 action。"
 
     async def get_message(self, group_id, bot, count):
         payloads = {"group_id": group_id, "count": count}
