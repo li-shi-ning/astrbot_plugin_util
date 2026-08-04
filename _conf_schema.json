@@ -208,6 +208,64 @@
       }
     }
   },
+  "agently_mail": {
+    "description": "QQ Agent 邮箱 CLI 工具",
+    "type": "object",
+    "hint": "将 @tencent-qqmail/agently-cli 封装为插件指令和大模型工具。不安装 skill，不接 MCP；运行环境需自行安装 agently-cli。写操作会先生成 confirmation_token，必须由管理员发送 /QQ邮箱确认 后才会真正执行。",
+    "items": {
+      "enable_agently_mail_feature": {
+        "description": "是否启用 QQ Agent 邮箱功能。",
+        "type": "bool",
+        "default": false,
+        "hint": "true / false"
+      },
+      "cli_path": {
+        "description": "agently-cli 命令路径。通常保持默认即可；如果未加入 PATH，可填写绝对路径。",
+        "type": "string",
+        "default": "agently-cli",
+        "hint": "agently-cli"
+      },
+      "workspace": {
+        "description": "AGENTLY_WORKSPACE 工作区名称，用于隔离邮箱授权身份。",
+        "type": "string",
+        "default": "astrbot_plugin_util",
+        "hint": "astrbot_plugin_util"
+      },
+      "timeout_seconds": {
+        "description": "CLI 命令超时时间，范围 5-600 秒。",
+        "type": "int",
+        "default": 60,
+        "hint": "60"
+      },
+      "list_default_limit": {
+        "description": "列出最近邮件的默认数量，范围 1-50。",
+        "type": "int",
+        "default": 10,
+        "hint": "10"
+      },
+      "enable_agently_mail_tools": {
+        "description": "是否向大模型暴露 QQ Agent 邮箱工具。",
+        "type": "bool",
+        "default": false,
+        "hint": "true / false"
+      },
+      "allow_write_operations": {
+        "description": "是否允许大模型准备发送、回复、转发和删除邮件。即使开启，也必须由管理员二次确认才会真正执行。",
+        "type": "bool",
+        "default": false,
+        "hint": "true / false"
+      },
+      "admin_qqs": {
+        "description": "允许使用 /QQ邮箱登录、/QQ邮箱状态、/QQ邮箱确认 的管理员 QQ 列表。留空时不会允许任何人执行人工管理指令。",
+        "type": "list",
+        "default": [],
+        "items": {
+          "type": "string"
+        },
+        "hint": "123456789"
+      }
+    }
+  },
   "offline_webhook_senders": {
     "type": "template_list",
     "description": "下线 Webhook 发送端",

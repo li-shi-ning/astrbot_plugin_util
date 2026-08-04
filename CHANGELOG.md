@@ -1,3 +1,9 @@
+# v1.6.33
+
+- 新增 QQ Agent 邮箱 CLI 工具：封装 `@tencent-qqmail/agently-cli`，提供 `/QQ邮箱登录`、`/QQ邮箱状态`、`/QQ邮箱确认` 管理指令。
+- 新增 QQ 邮箱 LLM 工具：列出、读取、搜索邮件可直接使用；发送、回复、转发、删除只生成 `confirmation_token`，必须由管理员二次确认。
+- 新增 `agently_mail` 配置项，支持功能开关、CLI 路径、工作区、超时、默认列表数量、工具开关、写操作开关和管理员 QQ 列表。
+
 # v1.6.32
 
 - 修正 AI 主动语音发送工具的 TTS 接入方式：按 `li_qwen3_tts_api/cosyvoice_generate.py` 调用阿里云百炼 CosyVoice 远程 SpeechSynthesizer 接口，而不是本地 `/generate` 服务。

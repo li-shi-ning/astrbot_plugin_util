@@ -1,0 +1,358 @@
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import re
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+
+QQMAIL_TOOL_NAMES = {
+    "qqmail_list_messages",
+    "qqmail_read_message",
+    "qqmail_search_messages",
+    "qqmail_send_message",
+    "qqmail_reply_message",
+    "qqmail_forward_message",
+    "qqmail_trash_message",
+}
+
+QQMAIL_WRITE_TOOL_NAMES = {
+    "qqmail_send_message",
+    "qqmail_reply_message",
+    "qqmail_forward_message",
+    "qqmail_trash_message",
+}
+
+URL_PATTERN = re.compile(r"https?://[^\s<>\"]+")
+CONFIRMATION_TOKEN_PATTERN = re.compile(
+    r"(?:confirmation_token|confirmation-token|confirmation token)[\"'\s:=]+([A-Za-z0-9._:-]+)",
+    re.IGNORECASE,
+)
+
+
+@dataclass(frozen=True)
+class AgentlyMailConfig:
+    enabled: bool = False
+    cli_path: str = "agently-cli"
+    workspace: str = "astrbot_plugin_util"
+    timeout_seconds: int = 60
+    list_default_limit: int = 10
+    enable_llm_tools: bool = False
+    allow_write_operations: bool = False
+    admin_qqs: tuple[str, ...] = ()
+
+    @property
+    def ready(self) -> bool:
+        return bool(self.enabled and self.cli_path)
+
+
+@dataclass(frozen=True)
+class AgentlyMailResult:
+    command: tuple[str, ...]
+    returncode: int
+    stdout: str
+    stderr: str
+
+    @property
+    def text(self) -> str:
+        return "\n".join(part for part in (self.stdout, self.stderr) if part).strip()
+
+
+@dataclass(frozen=True)
+class PendingMailConfirmation:
+    token: str
+    action: str
+    command_args: tuple[str, ...]
+    summary: str
+    created_at: float
+
+
+class AgentlyMailError(RuntimeError):
+    pass
+
+
+def build_agently_mail_config(config: dict[str, Any] | None) -> AgentlyMailConfig:
+    config = config or {}
+    return AgentlyMailConfig(
+        enabled=bool(config.get("enable_agently_mail_feature", False)),
+        cli_path=str(config.get("cli_path", "agently-cli") or "agently-cli").strip(),
+        workspace=str(config.get("workspace", "astrbot_plugin_util") or "astrbot_plugin_util").strip(),
+        timeout_seconds=_int_between(config.get("timeout_seconds"), default=60, minimum=5, maximum=600),
+        list_default_limit=_int_between(config.get("list_default_limit"), default=10, minimum=1, maximum=50),
+        enable_llm_tools=bool(config.get("enable_agently_mail_tools", False)),
+        allow_write_operations=bool(config.get("allow_write_operations", False)),
+        admin_qqs=tuple(
+            str(item).strip()
+            for item in config.get("admin_qqs", []) or []
+            if str(item).strip()
+        ),
+    )
+
+
+def _int_between(value: Any, *, default: int, minimum: int, maximum: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+    return max(minimum, min(maximum, parsed))
+
+
+def agently_mail_env(config: AgentlyMailConfig) -> dict[str, str]:
+    env = os.environ.copy()
+    if config.workspace:
+        env["AGENTLY_WORKSPACE"] = config.workspace
+    return env
+
+
+def mask_agently_mail_output(text: str) -> str:
+    text = str(text or "")
+    text = re.sub(r"(?i)(authorization:\s*bearer\s+)[^\s]+", r"\1<hidden>", text)
+    text = re.sub(r"(?i)(access[_-]?token[\"'\s:=]+)[^\s,\"'}]+", r"\1<hidden>", text)
+    return text
+
+
+def extract_first_url(text: str) -> str:
+    match = URL_PATTERN.search(str(text or ""))
+    return match.group(0) if match else ""
+
+
+def parse_confirmation_token(text: str) -> str:
+    raw = str(text or "")
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        data = None
+    token = _find_confirmation_token(data)
+    if token:
+        return token
+    match = CONFIRMATION_TOKEN_PATTERN.search(raw)
+    return match.group(1) if match else ""
+
+
+def _find_confirmation_token(value: Any) -> str:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if str(key) == "confirmation_token" and item:
+                return str(item)
+            found = _find_confirmation_token(item)
+            if found:
+                return found
+    if isinstance(value, list):
+        for item in value:
+            found = _find_confirmation_token(item)
+            if found:
+                return found
+    return ""
+
+
+def format_cli_result(result: AgentlyMailResult, *, max_chars: int = 6000) -> str:
+    text = mask_agently_mail_output(result.text)
+    if not text:
+        text = f"命令已完成，退出码 {result.returncode}。"
+    if len(text) > max_chars:
+        text = text[:max_chars] + "\n...[已截断]"
+    return text
+
+
+def build_recipient_args(flag: str, values: list[str] | tuple[str, ...] | str | None) -> list[str]:
+    if values is None:
+        return []
+    if isinstance(values, str):
+        raw_values = [item.strip() for item in re.split(r"[,;\n]", values) if item.strip()]
+    else:
+        raw_values = [str(item).strip() for item in values if str(item).strip()]
+    args: list[str] = []
+    for value in raw_values:
+        args.extend([flag, value])
+    return args
+
+
+def save_pending_confirmations(path: Path, pending: dict[str, PendingMailConfirmation]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = {
+        token: {
+            "token": item.token,
+            "action": item.action,
+            "command_args": list(item.command_args),
+            "summary": item.summary,
+            "created_at": item.created_at,
+        }
+        for token, item in pending.items()
+    }
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def load_pending_confirmations(path: Path) -> dict[str, PendingMailConfirmation]:
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    pending: dict[str, PendingMailConfirmation] = {}
+    for token, item in data.items():
+        if not isinstance(item, dict):
+            continue
+        command_args = item.get("command_args")
+        if not isinstance(command_args, list):
+            continue
+        token_text = str(item.get("token") or token).strip()
+        if not token_text:
+            continue
+        pending[token_text] = PendingMailConfirmation(
+            token=token_text,
+            action=str(item.get("action") or ""),
+            command_args=tuple(str(arg) for arg in command_args),
+            summary=str(item.get("summary") or ""),
+            created_at=float(item.get("created_at") or 0),
+        )
+    return pending
+
+
+def confirmation_summary(action: str, command_args: list[str]) -> str:
+    return f"{action}: {' '.join(command_args)}"
+
+
+class AgentlyMailClient:
+    def __init__(self, config: AgentlyMailConfig):
+        self.config = config
+
+    async def run(self, args: list[str] | tuple[str, ...], *, timeout: int | None = None) -> AgentlyMailResult:
+        if not self.config.ready:
+            raise AgentlyMailError("QQ Agent 邮箱功能未启用或 agently-cli 路径未配置。")
+        command = [self.config.cli_path, *[str(arg) for arg in args]]
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=agently_mail_env(self.config),
+            )
+        except FileNotFoundError as exc:
+            raise AgentlyMailError(f"找不到 agently-cli：{self.config.cli_path}") from exc
+        except OSError as exc:
+            raise AgentlyMailError(f"启动 agently-cli 失败：{exc}") from exc
+
+        try:
+            stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                process.communicate(),
+                timeout=timeout or self.config.timeout_seconds,
+            )
+        except asyncio.TimeoutError as exc:
+            process.kill()
+            await process.communicate()
+            raise AgentlyMailError("agently-cli 执行超时。") from exc
+
+        result = AgentlyMailResult(
+            command=tuple(command),
+            returncode=int(process.returncode or 0),
+            stdout=stdout_bytes.decode("utf-8", errors="replace").strip(),
+            stderr=stderr_bytes.decode("utf-8", errors="replace").strip(),
+        )
+        if result.returncode != 0:
+            raise AgentlyMailError(format_cli_result(result))
+        return result
+
+    async def login_and_capture_url(self, on_url=None) -> tuple[str, AgentlyMailResult]:
+        if not self.config.ready:
+            raise AgentlyMailError("QQ Agent 邮箱功能未启用或 agently-cli 路径未配置。")
+        command = [self.config.cli_path, "auth", "login"]
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=agently_mail_env(self.config),
+            )
+        except FileNotFoundError as exc:
+            raise AgentlyMailError(f"找不到 agently-cli：{self.config.cli_path}") from exc
+        except OSError as exc:
+            raise AgentlyMailError(f"启动 agently-cli 失败：{exc}") from exc
+
+        output_parts: list[str] = []
+        url = ""
+        deadline = asyncio.get_running_loop().time() + self.config.timeout_seconds
+        while asyncio.get_running_loop().time() < deadline and process.returncode is None:
+            await asyncio.sleep(0.2)
+            for stream in (process.stdout, process.stderr):
+                if stream is None:
+                    continue
+                try:
+                    chunk = await asyncio.wait_for(stream.read(4096), timeout=0.05)
+                except asyncio.TimeoutError:
+                    continue
+                if not chunk:
+                    continue
+                text = chunk.decode("utf-8", errors="replace")
+                output_parts.append(text)
+                url = url or extract_first_url(text)
+                if url:
+                    if on_url is not None:
+                        await on_url(url)
+                    break
+            if url:
+                break
+
+        if not url:
+            process.kill()
+            stdout_bytes, stderr_bytes = await process.communicate()
+            text = "".join(output_parts)
+            text += stdout_bytes.decode("utf-8", errors="replace")
+            text += stderr_bytes.decode("utf-8", errors="replace")
+            raise AgentlyMailError(f"未从 agently-cli auth login 输出中找到授权 URL：{mask_agently_mail_output(text)}")
+
+        try:
+            stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                process.communicate(),
+                timeout=self.config.timeout_seconds,
+            )
+        except asyncio.TimeoutError as exc:
+            process.kill()
+            await process.communicate()
+            raise AgentlyMailError("等待 QQ 邮箱授权完成超时。") from exc
+
+        stdout = "".join(output_parts) + stdout_bytes.decode("utf-8", errors="replace")
+        stderr = stderr_bytes.decode("utf-8", errors="replace")
+        result = AgentlyMailResult(
+            command=tuple(command),
+            returncode=int(process.returncode or 0),
+            stdout=stdout.strip(),
+            stderr=stderr.strip(),
+        )
+        if result.returncode != 0:
+            raise AgentlyMailError(format_cli_result(result))
+        return url, result
+
+    async def me(self) -> AgentlyMailResult:
+        return await self.run(["+me"])
+
+    async def list_messages(self, limit: int) -> AgentlyMailResult:
+        return await self.run(["message", "+list", "--limit", str(limit)])
+
+    async def read_message(self, message_id: str) -> AgentlyMailResult:
+        return await self.run(["message", "+read", "--id", message_id])
+
+    async def search_messages(self, query: str) -> AgentlyMailResult:
+        return await self.run(["message", "+search", "--q", query])
+
+    async def first_step_write(self, action: str, args: list[str]) -> tuple[AgentlyMailResult, PendingMailConfirmation]:
+        result = await self.run(args)
+        token = parse_confirmation_token(result.text)
+        if not token:
+            raise AgentlyMailError("agently-cli 未返回 confirmation_token，写操作未进入确认流程。")
+        pending = PendingMailConfirmation(
+            token=token,
+            action=action,
+            command_args=tuple(args),
+            summary=confirmation_summary(action, args),
+            created_at=asyncio.get_running_loop().time(),
+        )
+        return result, pending
+
+    async def confirm(self, pending: PendingMailConfirmation) -> AgentlyMailResult:
+        return await self.run([*pending.command_args, "--confirmation-token", pending.token])

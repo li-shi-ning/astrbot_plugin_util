@@ -68,6 +68,43 @@ AstrBot 当前配置界面没有目录选择器，因此 `audio_directory` 使�
 
 启用且配置完整后，模型会看到 `send_voice_to_user(text, language, instruction)` 工具。工具成功发送语音后会提醒模型本轮不要再用普通文本重复同一段内容。
 
+## QQ Agent 邮箱 CLI 工具
+
+插件可把 `@tencent-qqmail/agently-cli` 封装为 AstrBot 指令和大模型工具。该功能不安装 skill，不接 MCP；运行环境需要自行安装 Node.js 和 `agently-cli`：
+
+```bash
+npm install -g @tencent-qqmail/agently-cli
+```
+
+在插件配置页的 `agently_mail` 中配置：
+
+- `enable_agently_mail_feature`：是否启用 QQ Agent 邮箱功能，默认关闭。
+- `cli_path`：`agently-cli` 命令路径，通常保持默认即可。
+- `workspace`：`AGENTLY_WORKSPACE` 工作区，默认 `astrbot_plugin_util`，用于隔离授权身份。
+- `timeout_seconds`：CLI 命令超时时间。
+- `list_default_limit`：列出最近邮件的默认数量。
+- `enable_agently_mail_tools`：是否向大模型暴露邮箱工具。
+- `allow_write_operations`：是否允许大模型准备发送、回复、转发和删除邮件；即使开启，也必须管理员二次确认才会真正执行。
+- `admin_qqs`：允许使用 `/QQ邮箱登录`、`/QQ邮箱状态`、`/QQ邮箱确认` 的管理员 QQ 列表。留空时不会允许任何人执行人工管理指令。
+
+管理指令：
+
+- `/QQ邮箱登录`：管理员触发 OAuth 登录。机器人会发送原始授权 URL，浏览器完成授权后自动验证邮箱。
+- `/QQ邮箱状态`：查看当前授权邮箱。
+- `/QQ邮箱确认 <confirmation_token>`：确认并执行大模型准备好的写操作。
+
+大模型工具：
+
+- `qqmail_list_messages(limit)`：列出最近邮件。
+- `qqmail_read_message(message_id)`：读取指定邮件。
+- `qqmail_search_messages(query)`：搜索邮件。
+- `qqmail_send_message(to, subject, body, cc, bcc)`：准备发送邮件，返回确认 token。
+- `qqmail_reply_message(message_id, body, cc)`：准备回复邮件，返回确认 token。
+- `qqmail_forward_message(message_id, to, body)`：准备转发邮件，返回确认 token。
+- `qqmail_trash_message(message_id)`：准备移动到废纸篓，返回确认 token。
+
+发送、回复、转发和删除都不会由模型单次工具调用直接完成。模型第一次调用只会保存待确认操作，管理员确认后插件才会复跑 CLI 并追加 `--confirmation-token`。
+
 ## 账号下线邮件通知
 
 插件会检测 AIOCQHTTP 上报的 `bot_offline` 下线通知，例如“你的账号当前登录已失效，请重新登录。”。命中后可通过 QQ 邮箱 SMTP 自动发送告警邮件。
@@ -164,6 +201,7 @@ AstrBot 当前配置界面没有目录选择器，因此 `audio_directory` 使�
 - 新增 AI 主动语音发送工具，可调用外部 TTS API 生成并发送语音。
 - AI 主动语音发送工具支持 `instruction` 风格指令，可用自然语言影响语速、情绪、语气和朗读风格。
 - AI 主动语音发送工具按 `cosyvoice_generate.py` 调用阿里云百炼 CosyVoice 远程接口。
+- 新增 QQ Agent 邮箱 CLI 工具，可登录、查看状态、读取/搜索邮件，并以管理员确认方式发送、回复、转发和删除邮件。
 - 新增 AIOCQHTTP 账号下线邮件通知功能。
 - 新增下线 Webhook 发送端与接收端，可在多个 AstrBot 实例之间推送下线提醒。
 - 新增角色资料库搜索工具，可按 ni/其他配置自动选择艾玛或希罗资料库。
