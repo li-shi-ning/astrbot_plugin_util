@@ -16,7 +16,7 @@ from typing import Any
 
 OFFLINE_EMAIL_SUBJECT = "AstrBot bot account offline alert"
 QQMAIL_TOOL_NAME = "qqmail"
-QQMAIL_ACTIONS = {"status", "list", "read", "search", "send", "trash"}
+QQMAIL_ACTIONS = {"list", "read", "search", "send", "trash"}
 QQ_IMAP_HOST = "imap.qq.com"
 QQ_IMAP_PORT = 993
 QQ_SMTP_HOST = "smtp.qq.com"
@@ -233,14 +233,6 @@ class QQMailClient:
         client.login(self.sender, self.password)
         return client
 
-    def status(self) -> str:
-        with self._connect_imap() as client:
-            status, data = client.select("INBOX", readonly=True)
-            if status != "OK":
-                return "QQ邮箱状态检查失败：无法打开 INBOX。"
-            count = data[0].decode("utf-8", errors="replace") if data else "0"
-            return f"QQ邮箱 IMAP 登录成功。INBOX 邮件数量：{count}"
-
     def list_messages(self, limit: int) -> str:
         with self._connect_imap() as client:
             client.select("INBOX", readonly=True)
@@ -324,10 +316,6 @@ def _message_from_fetch_response(fetched: list[Any]) -> Message | None:
         if isinstance(payload, bytes):
             return email.message_from_bytes(payload)
     return None
-
-
-async def qqmail_status_async(*, sender: str, password: str) -> str:
-    return await asyncio.to_thread(QQMailClient(sender=sender, password=password).status)
 
 
 async def qqmail_list_async(*, sender: str, password: str, limit: int) -> str:

@@ -99,7 +99,6 @@ async def test_qqmail_send_uses_independent_smtp_config(monkeypatch):
 @pytest.mark.parametrize(
     ("action", "kwargs", "patched_name", "expected"),
     [
-        ("status", {}, "qqmail_status_async", "status ok"),
         ("list", {"limit": 2}, "qqmail_list_async", "list ok"),
         ("read", {"message_id": "1"}, "qqmail_read_async", "read ok"),
         ("search", {"query": "hello"}, "qqmail_search_async", "search ok"),

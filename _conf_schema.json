@@ -211,7 +211,7 @@
   "qq_mail_tool": {
     "description": "QQ 邮箱 AI 工具",
     "type": "object",
-    "hint": "向大模型暴露 qqmail 工具。发信使用 QQ SMTP，状态、列信、读信、搜索和删除使用 QQ IMAP。此配置与账号下线邮件通知互相独立。需要在 QQ 邮箱网页端开启 POP3/IMAP/SMTP 服务并填写授权码。",
+    "hint": "向大模型暴露 qqmail 工具。发信使用 QQ SMTP，列信、读信、搜索和删除使用 QQ IMAP；调用工具时会自动检测授权是否可用。此配置与账号下线邮件通知互相独立。需要在 QQ 邮箱网页端开启 POP3/IMAP/SMTP 服务并填写授权码。",
     "items": {
       "enable_qqmail_tool": {
         "description": "是否启用 QQ 邮箱 AI 工具。关闭后不会向大模型暴露 qqmail。",

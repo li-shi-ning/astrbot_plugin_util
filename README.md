@@ -70,7 +70,7 @@ AstrBot 当前配置界面没有目录选择器，因此 `audio_directory` 使�
 
 ## QQ 邮箱 AI 工具
 
-插件可向大模型暴露 `qqmail` 工具。该功能不依赖 `agently-cli`，发信走 QQ SMTP，状态、列信、读信、搜索和删除走 QQ IMAP。
+插件可向大模型暴露 `qqmail` 工具。该功能不依赖 `agently-cli`，发信走 QQ SMTP，列信、读信、搜索和删除走 QQ IMAP。调用具体动作时会自动连接 QQ 邮箱并验证授权是否可用。
 
 在 QQ 邮箱网页端申请授权码：
 
@@ -93,7 +93,6 @@ AstrBot 当前配置界面没有目录选择器，因此 `audio_directory` 使�
 
 大模型只暴露一个聚合工具 `qqmail(action, message_id, query, limit, to, subject, body, cc, bcc)`，通过 `action` 参数选择动作，避免工具数量过多影响模型选择效率：
 
-- `action=status`：检查 IMAP 登录状态并返回 INBOX 邮件数量。
 - `action=list`：列出最近邮件，可传 `limit`。
 - `action=read`：读取指定邮件，传 `message_id`。
 - `action=search`：搜索邮件，传 `query`。
@@ -209,7 +208,7 @@ AstrBot 当前配置界面没有目录选择器，因此 `audio_directory` 使�
 - 新增 AI 主动语音发送工具，可调用外部 TTS API 生成并发送语音。
 - AI 主动语音发送工具支持 `instruction` 风格指令，可用自然语言影响语速、情绪、语气和朗读风格。
 - AI 主动语音发送工具按 `cosyvoice_generate.py` 调用阿里云百炼 CosyVoice 远程接口。
-- 新增 QQ 邮箱 AI 工具，可通过独立授权码配置发送、查看状态、读取、搜索和移动邮件到废纸篓。
+- 新增 QQ 邮箱 AI 工具，可通过独立授权码配置发送、读取、搜索和移动邮件到废纸篓。
 - 新增 AIOCQHTTP 账号下线邮件通知功能。
 - 新增下线 Webhook 发送端与接收端，可在多个 AstrBot 实例之间推送下线提醒。
 - 新增角色资料库搜索工具，可按 ni/其他配置自动选择艾玛或希罗资料库。

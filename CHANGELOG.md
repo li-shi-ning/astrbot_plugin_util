@@ -1,3 +1,8 @@
+# v1.6.38
+
+- 移除 `qqmail` 的 `status` action，减少大模型工具选择分支。
+- QQ 邮箱工具改为在执行 `list/read/search/send/trash` 时自然连接 SMTP/IMAP 并验证授权是否可用。
+
 # v1.6.37
 
 - 废弃 QQ Agent `agently-cli` 邮箱方案，改为直接使用 QQ 邮箱授权码：SMTP 负责发信，IMAP 负责状态、列信、读信、搜索和移动到废纸篓。

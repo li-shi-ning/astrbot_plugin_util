@@ -95,7 +95,6 @@ try:
         qqmail_list_async,
         qqmail_read_async,
         qqmail_search_async,
-        qqmail_status_async,
         qqmail_trash_async,
         send_qq_email_async,
     )
@@ -181,7 +180,6 @@ except ImportError:
         qqmail_list_async,
         qqmail_read_async,
         qqmail_search_async,
-        qqmail_status_async,
         qqmail_trash_async,
         send_qq_email_async,
     )
@@ -231,7 +229,7 @@ ROLEPLAY_KNOWLEDGE_DB_PATH = ROLEPLAY_KNOWLEDGE_DB_RELATIVE_PATH
 FORWARD_NODES_BATCH_SIZE = 100
 
 
-@register("util", "lishinig", "私人插件", "1.6.37")
+@register("util", "lishinig", "私人插件", "1.6.38")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -2044,7 +2042,6 @@ class util(Star):
         """Use QQ Mail.
 
         Choose one action:
-        - status: check mailbox login status.
         - list: list recent messages.
         - read: read one message.
         - search: search messages.
@@ -2052,7 +2049,7 @@ class util(Star):
         - trash: move a message to trash.
 
         Args:
-            action(string): Required. One of status, list, read, search, send, trash.
+            action(string): Required. One of list, read, search, send, trash.
             message_id(string): Message id. Used by read and trash.
             query(string): Search text. Used by search.
             limit(number): Number of recent messages to list. Use 0 for the default.
@@ -2064,7 +2061,7 @@ class util(Star):
         """
         action = str(action or "").strip().lower()
         if action not in QQMAIL_ACTIONS:
-            return "不支持的 QQ 邮箱 action。可用：status/list/read/search/send/trash。"
+            return "不支持的 QQ 邮箱 action。可用：list/read/search/send/trash。"
         return await self._qqmail_run_action(
             action=action,
             message_id=message_id,
@@ -2479,11 +2476,6 @@ class util(Star):
             return message
         config = self.qqmail_tool_config
         try:
-            if action == "status":
-                return await qqmail_status_async(
-                    sender=config.sender,
-                    password=config.QQ_password,
-                )
             if action == "list":
                 resolved_limit = max(1, min(50, int(limit or config.list_default_limit)))
                 return await qqmail_list_async(
