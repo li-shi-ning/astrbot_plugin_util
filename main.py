@@ -241,7 +241,7 @@ ROLEPLAY_KNOWLEDGE_DB_PATH = ROLEPLAY_KNOWLEDGE_DB_RELATIVE_PATH
 FORWARD_NODES_BATCH_SIZE = 100
 
 
-@register("util", "lishinig", "私人插件", "1.6.34")
+@register("util", "lishinig", "私人插件", "1.6.35")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -2152,22 +2152,33 @@ class util(Star):
         cc: str = "",
         bcc: str = "",
     ) -> str:
-        """Use QQ Agent mail through agently-cli with one aggregated tool.
+        """Operate the user's QQ Mail mailbox through agently-cli.
 
-        Choose action from: list, read, search, send, reply, forward, trash.
-        Read actions run immediately. Write actions only create a confirmation
-        token; an administrator must send /QQ邮箱确认 <token> before execution.
+        This is a single aggregated mailbox tool. Set `action` to choose what
+        you want to do:
+        - list: show recent inbox messages.
+        - read: open one message by its message id.
+        - search: search messages by keyword.
+        - send: draft a new outgoing email and return a confirmation token.
+        - reply: draft a reply to an existing message and return a confirmation token.
+        - forward: draft forwarding an existing message and return a confirmation token.
+        - trash: draft moving a message to trash and return a confirmation token.
+
+        Read-only actions (list/read/search) run immediately. Write actions
+        (send/reply/forward/trash) do not actually send or delete mail here;
+        they only prepare the operation. An administrator must later send
+        /QQ邮箱确认 <token> to execute it.
 
         Args:
-            action(string): One of list, read, search, send, reply, forward, trash.
-            message_id(string): Required for read, reply, forward, and trash.
-            query(string): Required for search.
-            limit(number): Optional list limit for list.
-            to(string): Recipients for send or forward, separated by comma, semicolon, or newline.
-            subject(string): Subject for send.
-            body(string): Body for send, reply, or optional forward note.
-            cc(string): CC recipients for send or reply.
-            bcc(string): BCC recipients for send.
+            action(string): Required. Mail operation name: list, read, search, send, reply, forward, or trash.
+            message_id(string): Mail message id, such as msg_xxx. Required for read, reply, forward, and trash.
+            query(string): Search keywords or phrase. Required only when action is search.
+            limit(number): Maximum number of recent messages to show when action is list. Leave 0 to use the configured default.
+            to(string): Recipient email address list for send or forward. Separate multiple addresses with comma, semicolon, or newline.
+            subject(string): New email subject. Required only when action is send.
+            body(string): Email content. Required for send and reply; optional note when forwarding.
+            cc(string): Carbon-copy recipient email address list for send or reply. Separate multiple addresses with comma, semicolon, or newline.
+            bcc(string): Blind-carbon-copy recipient email address list for send only. Separate multiple addresses with comma, semicolon, or newline.
         """
         action = str(action or "").strip().lower()
         if action in QQMAIL_READ_ACTIONS:
