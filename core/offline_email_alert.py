@@ -11,6 +11,7 @@ from email.header import decode_header, make_header
 from email.header import Header
 from email.mime.text import MIMEText
 from email.message import Message
+from email.utils import formataddr
 from typing import Any
 
 
@@ -55,6 +56,7 @@ def build_offline_email_alert_config(
 class QQMailToolConfig:
     enabled: bool = False
     sender: str = ""
+    display_name: str = ""
     QQ_password: str = ""
     list_default_limit: int = 10
 
@@ -70,6 +72,7 @@ def build_qqmail_tool_config(
     return QQMailToolConfig(
         enabled=bool(section_config.get("enable_qqmail_tool", False)),
         sender=str(section_config.get("sender", "")).strip(),
+        display_name=str(section_config.get("display_name", "")).strip(),
         QQ_password=str(section_config.get("QQ_password", "")).strip(),
         list_default_limit=_int_between(
             section_config.get("list_default_limit"),
@@ -131,6 +134,7 @@ def send_qq_email(
     receiver: str | list[str] | tuple[str, ...],
     subject: str,
     content: str,
+    display_name: str = "",
     cc: str | list[str] | tuple[str, ...] = "",
     bcc: str | list[str] | tuple[str, ...] = "",
 ) -> None:
@@ -142,7 +146,10 @@ def send_qq_email(
         raise ValueError("receiver is required")
 
     message = MIMEText(content, "plain", "utf-8")
-    message["From"] = Header(sender)
+    if display_name:
+        message["From"] = formataddr((str(Header(display_name, "utf-8")), sender))
+    else:
+        message["From"] = sender
     message["To"] = Header(", ".join(to_addresses))
     if cc_addresses:
         message["Cc"] = Header(", ".join(cc_addresses))
@@ -160,6 +167,7 @@ async def send_qq_email_async(
     receiver: str | list[str] | tuple[str, ...],
     subject: str,
     content: str,
+    display_name: str = "",
     cc: str | list[str] | tuple[str, ...] = "",
     bcc: str | list[str] | tuple[str, ...] = "",
 ) -> None:
@@ -170,6 +178,7 @@ async def send_qq_email_async(
         receiver=receiver,
         subject=subject,
         content=content,
+        display_name=display_name,
         cc=cc,
         bcc=bcc,
     )

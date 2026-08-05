@@ -229,7 +229,7 @@ ROLEPLAY_KNOWLEDGE_DB_PATH = ROLEPLAY_KNOWLEDGE_DB_RELATIVE_PATH
 FORWARD_NODES_BATCH_SIZE = 100
 
 
-@register("util", "lishinig", "私人插件", "1.6.38")
+@register("util", "lishinig", "私人插件", "1.6.39")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -563,6 +563,7 @@ class util(Star):
             f"enabled={self.qqmail_tool_config.enabled}, "
             f"ready={self.qqmail_tool_config.ready}, "
             f"sender_configured={bool(self.qqmail_tool_config.sender)}, "
+            f"display_name_configured={bool(self.qqmail_tool_config.display_name)}, "
             f"password_configured={bool(self.qqmail_tool_config.QQ_password)}, "
             f"default_limit={self.qqmail_tool_config.list_default_limit}"
         )
@@ -2516,6 +2517,7 @@ class util(Star):
                     receiver=to,
                     subject=str(subject or ""),
                     content=str(body or ""),
+                    display_name=config.display_name,
                     cc=cc,
                     bcc=bcc,
                 )

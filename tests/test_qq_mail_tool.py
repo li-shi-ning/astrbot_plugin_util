@@ -34,6 +34,7 @@ def test_build_qqmail_tool_config_is_independent_from_offline_alert():
         {
             "enable_qqmail_tool": True,
             "sender": " bot@qq.com ",
+            "display_name": " 艾玛 ",
             "QQ_password": " auth-code ",
             "list_default_limit": 999,
         }
@@ -41,6 +42,7 @@ def test_build_qqmail_tool_config_is_independent_from_offline_alert():
 
     assert config.enabled is True
     assert config.sender == "bot@qq.com"
+    assert config.display_name == "艾玛"
     assert config.QQ_password == "auth-code"
     assert config.list_default_limit == 50
     assert config.ready is True
@@ -67,6 +69,7 @@ async def test_qqmail_send_uses_independent_smtp_config(monkeypatch):
         QQMailToolConfig(
             enabled=True,
             sender="tool@qq.com",
+            display_name="艾玛",
             QQ_password="tool-auth",
         )
     )
@@ -89,6 +92,7 @@ async def test_qqmail_send_uses_independent_smtp_config(monkeypatch):
             "receiver": "a@example.com,b@example.com",
             "subject": "Hi",
             "content": "Hello",
+            "display_name": "艾玛",
             "cc": "c@example.com",
             "bcc": "d@example.com",
         }

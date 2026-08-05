@@ -86,6 +86,7 @@ AstrBot 当前配置界面没有目录选择器，因此 `audio_directory` 使�
 
 - `enable_qqmail_tool`：是否向大模型暴露 QQ 邮箱工具，默认关闭。
 - `sender`：QQ 邮箱地址，用于 SMTP 发信和 IMAP 登录。
+- `display_name`：发件人显示名。发送邮件时显示为“显示名 <QQ邮箱地址>”；留空则显示邮箱地址。
 - `QQ_password`：QQ 邮箱授权码，不是 QQ 登录密码。
 - `list_default_limit`：列出或搜索邮件时默认返回的邮件数量，范围 1-50。
 

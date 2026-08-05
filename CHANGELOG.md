@@ -1,3 +1,8 @@
+# v1.6.39
+
+- `qq_mail_tool` 新增 `display_name` 配置项，可设置 QQ 邮箱 AI 工具发送邮件时的发件人显示名。
+- SMTP 发信支持 `From: 显示名 <邮箱地址>`，留空时保持显示邮箱地址。
+
 # v1.6.38
 
 - 移除 `qqmail` 的 `status` action，减少大模型工具选择分支。

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from email.header import decode_header, make_header
 from email import message_from_string
 from pathlib import Path
 from types import SimpleNamespace
@@ -115,6 +116,42 @@ def test_send_qq_email_uses_qq_smtp(monkeypatch):
     parsed_message = message_from_string(calls[2][3])
     assert parsed_message.get_payload(decode=True).decode("utf-8") == "offline"
     assert calls[3] == ("quit",)
+
+
+def test_send_qq_email_uses_display_name_in_from_header(monkeypatch):
+    calls = []
+
+    class FakeSMTP:
+        def __init__(self, host, port):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            pass
+
+        def login(self, sender, password):
+            pass
+
+        def sendmail(self, sender, receiver, message):
+            calls.append(message)
+
+    monkeypatch.setattr("core.offline_email_alert.smtplib.SMTP_SSL", FakeSMTP)
+
+    send_qq_email(
+        sender="sender@qq.com",
+        password="auth-code",
+        receiver="receiver@example.com",
+        subject="subject",
+        content="content",
+        display_name="艾玛",
+    )
+
+    parsed_message = message_from_string(calls[0])
+    from_header = parsed_message["From"]
+    assert "sender@qq.com" in from_header
+    assert str(make_header(decode_header(from_header.split(" <")[0]))) == "艾玛"
 
 
 @pytest.mark.asyncio

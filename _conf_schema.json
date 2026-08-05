@@ -225,6 +225,12 @@
         "default": "",
         "hint": "123456@qq.com"
       },
+      "display_name": {
+        "description": "发件人显示名。发送邮件时会显示为“显示名 <QQ邮箱地址>”；留空则显示邮箱地址。",
+        "type": "string",
+        "default": "",
+        "hint": "艾玛"
+      },
       "QQ_password": {
         "description": "QQ 邮箱授权码，不是 QQ 登录密码。需要在 QQ 邮箱网页端开启 POP3/IMAP/SMTP 服务后生成。",
         "type": "string",
