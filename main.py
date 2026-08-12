@@ -229,7 +229,7 @@ ROLEPLAY_KNOWLEDGE_DB_PATH = ROLEPLAY_KNOWLEDGE_DB_RELATIVE_PATH
 FORWARD_NODES_BATCH_SIZE = 100
 
 
-@register("util", "lishinig", "私人插件", "1.6.39")
+@register("util", "lishinig", "私人插件", "1.6.40")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -1197,6 +1197,10 @@ class util(Star):
     async def replyMessage(self, event: AiocqhttpMessageEvent):
         """获取所有消息，进行贴表情"""
         raw_message = getattr(event.message_obj, "raw_message", None)
+        if not isinstance(raw_message, dict):
+            return
+        if raw_message.get("message_type") != "group":
+            return
         message_id = raw_message.get("message_id", None)
         text = raw_message.get("raw_message", None)
         if not text or not message_id:
@@ -1208,7 +1212,10 @@ class util(Star):
         if emoji_id is None:
             return
         payloads = {"message_id": message_id, "emoji_id": emoji_id}
-        await bot.api.call_action("set_msg_emoji_like", **payloads)
+        try:
+            await bot.api.call_action("set_msg_emoji_like", **payloads)
+        except Exception as exc:
+            logger.warning("[util] 设置消息表情回应失败: %s", exc)
 
     @filter.command_group("lishi")
     async def lishi(self):
