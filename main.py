@@ -229,7 +229,7 @@ ROLEPLAY_KNOWLEDGE_DB_PATH = ROLEPLAY_KNOWLEDGE_DB_RELATIVE_PATH
 FORWARD_NODES_BATCH_SIZE = 100
 
 
-@register("util", "lishinig", "私人插件", "1.6.40")
+@register("util", "lishinig", "私人插件", "1.6.41")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -992,7 +992,7 @@ class util(Star):
             yield event.plain_result(MUSIC_SEARCH_DISABLED_MESSAGE)
             return
 
-        keyword = str(keyword or "").strip()
+        keyword = self._music_search_keyword_from_event(event, keyword)
         if not keyword:
             yield event.plain_result(MUSIC_SEARCH_USAGE)
             return
@@ -1104,6 +1104,20 @@ class util(Star):
 
     def _music_api(self) -> NeteaseMusicAPI:
         return NeteaseMusicAPI(self.music_search_config.api_base_url)
+
+    def _music_search_keyword_from_event(
+        self,
+        event: AstrMessageEvent,
+        keyword: str = "",
+    ) -> str:
+        outline_getter = getattr(event, "get_message_outline", None)
+        outline = outline_getter() if callable(outline_getter) else ""
+        message = str(getattr(event, "message_str", "") or outline or "").strip()
+        for command in ("点歌", "music", "听歌", "网易云"):
+            match = re.match(rf"^/?{re.escape(command)}(?:\s+|$)(.*)$", message)
+            if match:
+                return match.group(1).strip()
+        return str(keyword or "").strip()
 
     def _save_music_cookie(self, cookie: str) -> None:
         save_persisted_music_cookie(cookie, NETEASE_COOKIE_PATH)

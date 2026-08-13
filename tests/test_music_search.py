@@ -221,6 +221,29 @@ async def test_search_music_command_returns_results_and_waits_for_selection():
 
 
 @pytest.mark.asyncio
+async def test_search_music_command_keeps_space_separated_song_name():
+    api = FakeMusicApi(
+        songs=[
+            {
+                "id": 10002,
+                "name": "Shape of You",
+                "artists": [{"name": "Ed Sheeran"}],
+                "album": {"name": "÷"},
+                "duration": 233000,
+            }
+        ]
+    )
+    plugin = make_plugin(api=api)
+
+    results = await collect(
+        plugin.search_music_command(make_event("/点歌 Shape of You"), "Shape")
+    )
+
+    assert api.search_calls == [("Shape of You", 5)]
+    assert "找到 1 首与「Shape of You」相关的歌曲" in results[0].message_str
+
+
+@pytest.mark.asyncio
 async def test_select_music_command_sends_detail_cover_and_record():
     api = FakeMusicApi(
         songs=[
