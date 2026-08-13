@@ -43,6 +43,11 @@ AstrBot 当前配置界面没有目录选择器，因此 `audio_directory` 使�
 - `/网易云登录`、`/音乐登录`、`/点歌登录`：直接发送网易云音乐扫码登录二维码，扫码确认后自动持久化保存 Cookie。
 - 搜索后回复列表编号：发送歌曲信息、封面和语音播放消息。
 
+启用音乐搜索功能后，大模型会看到一个聚合工具 `netease_music(action, keyword, index)`：
+
+- `action=search`：按 `keyword` 搜索歌曲，并把候选结果缓存到当前会话。
+- `action=select`：按上一轮搜索结果的 `index` 编号点歌，发送歌曲信息、封面和语音播放消息。
+
 音乐搜索需要先在插件配置页填写 `music_search.api_base_url`。该配置不提供公开默认服务地址；如果只填写 `host:port`，插件会自动补全为 `http://host:port`。
 
 可通过 `music_search.enable_music_search_feature` 开启或关闭该功能；关闭后 `/点歌` 会提示功能已关闭。`quality` 控制优先音质，音频链接不可用时会依次尝试 `exhigh`、`higher`、`standard`。
