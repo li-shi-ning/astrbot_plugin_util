@@ -1,2 +1,0 @@
-markitdown-no-magika[docx,xls,xlsx]>=0.1.2
-pypdf>=6.1.1

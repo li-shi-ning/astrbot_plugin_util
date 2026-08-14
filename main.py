@@ -29,7 +29,6 @@ from astrbot.core.platform.message_type import MessageType
 from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
     AiocqhttpMessageEvent,
 )
-from astrbot.core.agent.message import TextPart
 from astrbot.core.star.star import star_map
 from astrbot.core.star.star_handler import EventType, star_handlers_registry
 from astrbot.core.utils.astrbot_path import get_astrbot_plugin_data_path
@@ -52,13 +51,6 @@ try:
         get_qq_nickname,
         parse_group_history_components,
         parse_group_history_text,
-    )
-    from .core.document_parse import (
-        DOCUMENT_PARSE_DISABLED_MESSAGE,
-        DOCUMENT_PARSE_TOOL_NAME,
-        DocumentParseRegistry,
-        build_document_parse_config,
-        format_available_files,
     )
     from .core.keyword_voice import load_group_keyword_voices
     from .core.love_message import (
@@ -145,13 +137,6 @@ except ImportError:
         parse_group_history_components,
         parse_group_history_text,
     )
-    from core.document_parse import (
-        DOCUMENT_PARSE_DISABLED_MESSAGE,
-        DOCUMENT_PARSE_TOOL_NAME,
-        DocumentParseRegistry,
-        build_document_parse_config,
-        format_available_files,
-    )
     from core.keyword_voice import load_group_keyword_voices
     from core.love_message import (
         choose_love_message,
@@ -236,17 +221,15 @@ PLUGIN_DATA_DIR = (Path(get_astrbot_plugin_data_path()) / "astrbot_plugin_util")
 NETEASE_LOGIN_DATA_DIR = (PLUGIN_DATA_DIR / "netease_login").resolve()
 NETEASE_COOKIE_PATH = (NETEASE_LOGIN_DATA_DIR / "cookie.json").resolve()
 AI_VOICE_DATA_DIR = (PLUGIN_DATA_DIR / "ai_voice").resolve()
-DOCUMENT_PARSE_CACHE_DIR = (PLUGIN_DATA_DIR / "document_parse").resolve()
 ROLEPLAY_KNOWLEDGE_ROOT = (PLUGIN_ROOT / "cs" / "output").resolve()
 ROLEPLAY_KNOWLEDGE_DB_RELATIVE_PATH = (
     Path("roleplay_knowledge") / ROLEPLAY_KNOWLEDGE_DB_FILENAME
 )
 ROLEPLAY_KNOWLEDGE_DB_PATH = ROLEPLAY_KNOWLEDGE_DB_RELATIVE_PATH
 FORWARD_NODES_BATCH_SIZE = 100
-NETEASE_MUSIC_TOOL_NAME = "netease_music"
 
 
-@register("util", "lishinig", "私人插件", "1.6.46")
+@register("util", "lishinig", "私人插件", "1.6.41")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -429,7 +412,6 @@ class util(Star):
         offline_email_alert_config = config_section("offline_email_alert")
         qq_mail_tool_config = config_section("qq_mail_tool")
         roleplay_knowledge_config = config_section("roleplay_knowledge")
-        document_parse_config = config_section("document_parse")
 
         self.enable_history_chunking_feature = config_value(
             history_config,
@@ -553,8 +535,6 @@ class util(Star):
             offline_email_alert_config
         )
         self.qqmail_tool_config = build_qqmail_tool_config(qq_mail_tool_config)
-        self.document_parse_config = build_document_parse_config(document_parse_config)
-        self.document_parse_registry = DocumentParseRegistry(DOCUMENT_PARSE_CACHE_DIR)
         self.offline_webhook_senders = load_offline_webhook_senders(config)
         self.offline_webhook_receiver_server = load_offline_webhook_receiver_server(
             config
@@ -1008,8 +988,40 @@ class util(Star):
     @filter.command("点歌", alias={"music", "听歌", "网易云"})
     async def search_music_command(self, event: AstrMessageEvent, keyword: str = ""):
         """Search music and wait for a numeric selection."""
+        if not self.music_search_config.enabled:
+            yield event.plain_result(MUSIC_SEARCH_DISABLED_MESSAGE)
+            return
+
         keyword = self._music_search_keyword_from_event(event, keyword)
-        yield event.plain_result(await self._search_music_and_cache(event, keyword))
+        if not keyword:
+            yield event.plain_result(MUSIC_SEARCH_USAGE)
+            return
+
+        api = self._music_api()
+        try:
+            songs = await api.search_songs(
+                keyword,
+                self.music_search_config.search_limit,
+            )
+        except Exception as exc:
+            logger.warning("[util] 音乐搜索失败: %s", exc)
+            yield event.plain_result(MUSIC_SEARCH_API_ERROR_MESSAGE)
+            return
+
+        if not songs:
+            yield event.plain_result(MUSIC_SEARCH_EMPTY_MESSAGE)
+            return
+
+        session_id = event.get_session_id()
+        cache_key = f"{session_id}:{uuid.uuid4().hex}"
+        self.music_song_cache[cache_key] = songs
+        self.music_pending_selections[session_id] = PendingMusicSelection(
+            cache_key=cache_key,
+            expires_at=asyncio.get_running_loop().time()
+            + self.music_search_config.selection_timeout_seconds,
+        )
+
+        yield event.plain_result(format_search_results(keyword, songs))
 
     @filter.regex(r"^\d+$", priority=999)
     async def select_music_command(self, event: AstrMessageEvent):
@@ -1032,9 +1044,47 @@ class util(Star):
         except ValueError:
             return
 
-        result = await self._select_cached_music(event, selected_index, stop_event=True)
-        if result != "点歌已发送。":
-            yield event.plain_result(result)
+        songs = self.music_song_cache.get(selection.cache_key, [])
+        if not 1 <= selected_index <= len(songs):
+            yield event.plain_result(MUSIC_SELECTION_INVALID_MESSAGE)
+            return
+
+        event.stop_event()
+        self._remove_music_selection(session_id, selection.cache_key)
+        selected_song = songs[selected_index - 1]
+        song_id = selected_song.get("id")
+
+        api = self._music_api()
+        try:
+            song_detail = await api.get_song_detail(song_id)
+            if not song_detail:
+                yield event.plain_result(MUSIC_DETAIL_ERROR_MESSAGE)
+                return
+            audio_url = await api.get_audio_url(
+                song_id,
+                self.music_search_config.quality,
+                self.music_search_config.cookie,
+            )
+        except Exception as exc:
+            logger.warning("[util] 获取音乐详情失败: %s", exc)
+            yield event.plain_result(MUSIC_DETAIL_ERROR_MESSAGE)
+            return
+
+        if not audio_url:
+            yield event.plain_result(MUSIC_AUDIO_UNAVAILABLE_MESSAGE)
+            return
+
+        detail_text, cover_url, audio_url = format_song_detail(
+            song_detail,
+            audio_url,
+            self.music_search_config.quality,
+        )
+        components: list[Any] = [Comp.Plain(detail_text)]
+        if cover_url:
+            components.append(Comp.Image.fromURL(cover_url))
+        logger.info("[util] 准备发送点歌信息: song_id=%s, cover=%s", song_id, bool(cover_url))
+        await event.send(MessageChain(components))
+        await self._send_music_record(event, audio_url)
 
     async def _send_music_record(self, event: AstrMessageEvent, audio_url: str) -> None:
         logger.info("[util] 准备发送点歌音频: %s", audio_url)
@@ -1051,104 +1101,6 @@ class util(Star):
                     ]
                 )
             )
-
-    async def _search_music_and_cache(
-        self,
-        event: AstrMessageEvent,
-        keyword: str,
-    ) -> str:
-        if not self.music_search_config.enabled:
-            return MUSIC_SEARCH_DISABLED_MESSAGE
-
-        keyword = str(keyword or "").strip()
-        if not keyword:
-            return MUSIC_SEARCH_USAGE
-
-        api = self._music_api()
-        try:
-            songs = await api.search_songs(
-                keyword,
-                self.music_search_config.search_limit,
-            )
-        except Exception as exc:
-            logger.warning("[util] 音乐搜索失败: %s", exc)
-            return MUSIC_SEARCH_API_ERROR_MESSAGE
-
-        if not songs:
-            return MUSIC_SEARCH_EMPTY_MESSAGE
-
-        session_id = event.get_session_id()
-        cache_key = f"{session_id}:{uuid.uuid4().hex}"
-        self.music_song_cache[cache_key] = songs
-        self.music_pending_selections[session_id] = PendingMusicSelection(
-            cache_key=cache_key,
-            expires_at=asyncio.get_running_loop().time()
-            + self.music_search_config.selection_timeout_seconds,
-        )
-
-        return format_search_results(keyword, songs)
-
-    async def _select_cached_music(
-        self,
-        event: AstrMessageEvent,
-        selected_index: int,
-        *,
-        stop_event: bool = False,
-    ) -> str:
-        session_id = event.get_session_id()
-        selection = self.music_pending_selections.get(session_id)
-        if selection is None:
-            return "没有待选择的点歌结果，请先搜索歌曲。"
-
-        if pending_selection_is_expired(
-            selection,
-            now=asyncio.get_running_loop().time(),
-        ):
-            self._remove_music_selection(session_id, selection.cache_key)
-            return MUSIC_SELECTION_EXPIRED_MESSAGE
-
-        songs = self.music_song_cache.get(selection.cache_key, [])
-        if not 1 <= selected_index <= len(songs):
-            return MUSIC_SELECTION_INVALID_MESSAGE
-
-        if stop_event:
-            stop_getter = getattr(event, "stop_event", None)
-            if callable(stop_getter):
-                stop_getter()
-
-        self._remove_music_selection(session_id, selection.cache_key)
-        selected_song = songs[selected_index - 1]
-        song_id = selected_song.get("id")
-
-        api = self._music_api()
-        try:
-            song_detail = await api.get_song_detail(song_id)
-            if not song_detail:
-                return MUSIC_DETAIL_ERROR_MESSAGE
-            audio_url = await api.get_audio_url(
-                song_id,
-                self.music_search_config.quality,
-                self.music_search_config.cookie,
-            )
-        except Exception as exc:
-            logger.warning("[util] 获取音乐详情失败: %s", exc)
-            return MUSIC_DETAIL_ERROR_MESSAGE
-
-        if not audio_url:
-            return MUSIC_AUDIO_UNAVAILABLE_MESSAGE
-
-        detail_text, cover_url, audio_url = format_song_detail(
-            song_detail,
-            audio_url,
-            self.music_search_config.quality,
-        )
-        components: list[Any] = [Comp.Plain(detail_text)]
-        if cover_url:
-            components.append(Comp.Image.fromURL(cover_url))
-        logger.info("[util] 准备发送点歌信息: song_id=%s, cover=%s", song_id, bool(cover_url))
-        await event.send(MessageChain(components))
-        await self._send_music_record(event, audio_url)
-        return "点歌已发送。"
 
     def _music_api(self) -> NeteaseMusicAPI:
         return NeteaseMusicAPI(self.music_search_config.api_base_url)
@@ -1598,16 +1550,6 @@ class util(Star):
             or not mail_config.ready
         ):
             self._remove_tool_from_request(req, QQMAIL_TOOL_NAME)
-
-        document_config = getattr(self, "document_parse_config", None)
-        if document_config is None or not document_config.enabled:
-            self._remove_tool_from_request(req, DOCUMENT_PARSE_TOOL_NAME)
-        else:
-            await self._inject_document_files_for_llm(event, req)
-
-        music_config = getattr(self, "music_search_config", None)
-        if music_config is None or not music_config.enabled:
-            self._remove_tool_from_request(req, NETEASE_MUSIC_TOOL_NAME)
 
         if not self.roleplay_knowledge_config.enabled:
             self._remove_tool_from_request(req, ROLEPLAY_KNOWLEDGE_TOOL_NAME)
@@ -2105,63 +2047,6 @@ class util(Star):
             "如果需要补充，只补充极短说明。"
         )
 
-    @filter.llm_tool(name=DOCUMENT_PARSE_TOOL_NAME)
-    async def parse_document(
-        self,
-        event: AstrMessageEvent,
-        file_id: str,
-        start_line: int = 1,
-        line_count: int = 120,
-    ) -> str:
-        """Read a converted Markdown document by file_id.
-
-        Args:
-            file_id(string): Required file id from the available_files block in the current message.
-            start_line(number): 1-based Markdown line number to start reading from.
-            line_count(number): Number of Markdown lines to read. Use a smaller value for dense documents.
-        """
-        config = getattr(self, "document_parse_config", None)
-        if config is None or not config.enabled:
-            return DOCUMENT_PARSE_DISABLED_MESSAGE
-
-        try:
-            return self.document_parse_registry.read_markdown_lines(
-                str(file_id or "").strip(),
-                start_line=int(start_line or 1),
-                line_count=int(line_count or 120),
-                max_output_chars=config.max_output_chars,
-                config=config,
-            )
-        except Exception as exc:
-            logger.warning("[util] document parse failed: %s", exc)
-            return f"文档解析失败：{exc}"
-
-    @filter.llm_tool(name=NETEASE_MUSIC_TOOL_NAME)
-    async def netease_music(
-        self,
-        event: AstrMessageEvent,
-        action: str,
-        keyword: str = "",
-        index: int = 0,
-    ) -> str:
-        """Search or play NetEase Cloud Music in the current session.
-
-        Args:
-            action(string): Required. Use search to find songs, or select to play one result from the latest search.
-            keyword(string): Song name or search keywords. Required when action is search.
-            index(number): 1-based result number from the latest search. Required when action is select.
-        """
-        action = str(action or "").strip().lower()
-        if action == "search":
-            return await self._search_music_and_cache(event, keyword)
-        if action in {"select", "play"}:
-            try:
-                selected_index = int(index)
-            except (TypeError, ValueError):
-                return MUSIC_SELECTION_INVALID_MESSAGE
-            return await self._select_cached_music(event, selected_index)
-        return "不支持的网易云音乐 action。可用：search/select。"
-
     @filter.llm_tool(name=QQMAIL_TOOL_NAME)
     async def qqmail(
         self,
@@ -2547,25 +2432,6 @@ class util(Star):
 
     def _remove_history_read_tool_from_request(self, req: ProviderRequest) -> bool:
         return self._remove_tool_from_request(req, "read_current_history")
-
-    async def _inject_document_files_for_llm(
-        self,
-        event: AstrMessageEvent,
-        req: ProviderRequest,
-    ) -> None:
-        try:
-            entries = await self.document_parse_registry.register_event_files(
-                event,
-                config=self.document_parse_config,
-            )
-        except Exception as exc:
-            logger.warning("[util] failed to register document files: %s", exc)
-            return
-
-        available_files = format_available_files(entries)
-        if not available_files:
-            return
-        req.extra_user_content_parts.append(TextPart(text=available_files).mark_as_temp())
 
     def _request_tool_set_has_tool(self, tool_set, tool_name: str) -> bool:
         if hasattr(tool_set, "names"):

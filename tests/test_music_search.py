@@ -309,66 +309,6 @@ async def test_select_music_command_rejects_invalid_number():
 
 
 @pytest.mark.asyncio
-async def test_netease_music_tool_searches_and_selects_cached_song():
-    api = FakeMusicApi(
-        songs=[
-            {
-                "id": 10002,
-                "name": "Shape of You",
-                "artists": [{"name": "Ed Sheeran"}],
-                "album": {"name": "÷"},
-                "duration": 233000,
-            }
-        ],
-        detail={
-            "id": 10002,
-            "name": "Shape of You",
-            "ar": [{"name": "Ed Sheeran"}],
-            "al": {
-                "name": "÷",
-                "picUrl": "https://music.example/shape.jpg",
-            },
-            "dt": 233000,
-        },
-        audio_url="https://music.example/shape.mp3",
-    )
-    plugin = make_plugin(api=api)
-    event = make_event("")
-
-    search_result = await plugin.netease_music(
-        event,
-        action="search",
-        keyword="Shape of You",
-    )
-    select_result = await plugin.netease_music(event, action="select", index=1)
-
-    assert api.search_calls == [("Shape of You", 5)]
-    assert "Shape of You" in search_result
-    assert select_result == "点歌已发送。"
-    assert api.detail_calls == [10002]
-    assert api.audio_calls == [(10002, "exhigh", "")]
-    assert isinstance(event.sent[0].chain[0], Comp.Plain)
-    assert "歌名：Shape of You" in event.sent[0].chain[0].text
-    assert isinstance(event.sent[1].chain[0], Comp.Record)
-    assert event.sent[1].chain[0].file == "https://music.example/shape.mp3"
-    assert plugin.music_pending_selections == {}
-    assert plugin.music_song_cache == {}
-
-
-@pytest.mark.asyncio
-async def test_netease_music_tool_reports_disabled():
-    plugin = make_plugin(MusicConfig(enabled=False))
-
-    result = await plugin.netease_music(
-        make_event(""),
-        action="search",
-        keyword="Lemon",
-    )
-
-    assert result == MUSIC_SEARCH_DISABLED_MESSAGE
-
-
-@pytest.mark.asyncio
 async def test_login_netease_music_command_persists_cookie(monkeypatch, tmp_path):
     async def fast_sleep(_seconds):
         return None

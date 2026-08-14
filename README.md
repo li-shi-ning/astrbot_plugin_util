@@ -43,36 +43,11 @@ AstrBot 当前配置界面没有目录选择器，因此 `audio_directory` 使�
 - `/网易云登录`、`/音乐登录`、`/点歌登录`：直接发送网易云音乐扫码登录二维码，扫码确认后自动持久化保存 Cookie。
 - 搜索后回复列表编号：发送歌曲信息、封面和语音播放消息。
 
-启用音乐搜索功能后，大模型会看到一个聚合工具 `netease_music(action, keyword, index)`：
-
-- `action=search`：按 `keyword` 搜索歌曲，并把候选结果缓存到当前会话。
-- `action=select`：按上一轮搜索结果的 `index` 编号点歌，发送歌曲信息、封面和语音播放消息。
-
 音乐搜索需要先在插件配置页填写 `music_search.api_base_url`。该配置不提供公开默认服务地址；如果只填写 `host:port`，插件会自动补全为 `http://host:port`。
 
 可通过 `music_search.enable_music_search_feature` 开启或关闭该功能；关闭后 `/点歌` 会提示功能已关闭。`quality` 控制优先音质，音频链接不可用时会依次尝试 `exhigh`、`higher`、`standard`。
 
 需要使用 VIP 账号访问会员音乐时，发送 `/网易云登录` 并用网易云音乐 App 扫码确认。登录成功后插件会把接口返回的 Cookie 持久化保存到 AstrBot 插件数据目录 `data/plugin_data/astrbot_plugin_util/netease_login/cookie.json`，重启后会自动读取，后续点歌会自动携带该登录态。`music_search.cookie` 仍可手动填写作为备用配置。Cookie 属于账号凭据，请只在可信环境中使用登录指令。
-
-## 文档解析工具
-
-插件可向大模型暴露 `parse_document(file_id, start_line, line_count)` 工具，把当前消息或引用消息里的文件转换为 Markdown 后按行读取。适合处理用户发送或引用的 PDF、Markdown、文本、CSV、HTML、Word、Excel、PowerPoint 等文档。
-
-默认行为：
-
-- 插件会在 LLM 请求阶段扫描当前消息和引用消息里的文件，为每个文件生成 `file_id`。
-- 大模型会在输入中看到 `<available_files>` 文件列表，例如 `file_id="file_xxx"` 和文件名。
-- 文件会先转换为 Markdown 并写入 AstrBot 插件数据目录的临时缓存。
-- 工具按 `file_id`、`start_line`、`line_count` 读取 Markdown 行范围，便于长文档分段阅读。
-- 缓存文件 30 分钟未被访问会自动删除。
-
-在插件配置页的 `document_parse` 中配置：
-
-- `enable_document_parse_tool`：是否启用工具，默认关闭。
-- `max_output_chars`：单次返回给大模型的最大字符数，默认 `12000`。
-- `max_file_mb`：允许解析的单个文件大小上限，默认 `30` MB。
-
-实现参考 Microsoft MarkItDown 的“文档转 Markdown”思路：插件通过 `requirements.txt` 声明 `markitdown-no-magika[docx,xls,xlsx]` 和 `pypdf`，AstrBot 安装插件依赖后会优先使用 MarkItDown；未安装 MarkItDown 时，PDF 使用 `pypdf` 兜底，纯文本/Markdown/CSV/HTML 直接读取。
 
 ## AI 主动语音发送工具
 
@@ -252,7 +227,3 @@ AstrBot 当前配置界面没有目录选择器，因此 `audio_directory` 使�
 随机群友土味情话功能的实现约定见 [LOVE_MESSAGE_DESIGN.md](LOVE_MESSAGE_DESIGN.md)。
 
 网易云音乐 API 服务失效时的服务器排查与手动重启步骤见 [docs/网易云音乐服务重启.md](docs/网易云音乐服务重启.md)。
-
-## 本地安装包
-
-运行 `python scripts/package_plugin.py` 会在 `dist/` 生成当前版本的 AstrBot 本地安装 zip。`dist/` 属于生成产物，打包脚本会自动排除旧安装包，避免 zip 套 zip 导致体积翻倍。
