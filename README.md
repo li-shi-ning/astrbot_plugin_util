@@ -251,3 +251,7 @@ AstrBot 当前配置界面没有目录选择器，因此 `audio_directory` 使�
 随机群友土味情话功能的实现约定见 [LOVE_MESSAGE_DESIGN.md](LOVE_MESSAGE_DESIGN.md)。
 
 网易云音乐 API 服务失效时的服务器排查与手动重启步骤见 [docs/网易云音乐服务重启.md](docs/网易云音乐服务重启.md)。
+
+## 本地安装包
+
+运行 `python scripts/package_plugin.py` 会在 `dist/` 生成当前版本的 AstrBot 本地安装 zip。`dist/` 属于生成产物，打包脚本会自动排除旧安装包，避免 zip 套 zip 导致体积翻倍。

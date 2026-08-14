@@ -1,3 +1,8 @@
+# v1.6.45
+
+- 修复本地安装包打包脚本会把 `dist/` 中旧 zip 一起打入新 zip，导致安装包体积套娃翻倍的问题。
+- 从 git 跟踪中移除历史安装包产物，后续安装包仍会生成到 `dist/`，但不再纳入源码提交。
+
 # v1.6.44
 
 - 新增插件级 `requirements.txt`，声明 `markitdown-no-magika[docx,xls,xlsx]` 与 `pypdf`，便于 AstrBot 安装插件时自动下载文档解析依赖。
