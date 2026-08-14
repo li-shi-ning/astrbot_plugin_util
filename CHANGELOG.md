@@ -1,3 +1,8 @@
+# v1.6.44
+
+- 新增插件级 `requirements.txt`，声明 `markitdown-no-magika[docx,xls,xlsx]` 与 `pypdf`，便于 AstrBot 安装插件时自动下载文档解析依赖。
+- 更新文档解析说明，明确 Word、Excel、PowerPoint 等格式由 MarkItDown 依赖提供支持。
+
 # v1.6.43
 
 - 新增大模型文档解析工具 `parse_document(index, path, max_chars)`，可解析当前消息或引用消息中的文件并返回 Markdown 文本。

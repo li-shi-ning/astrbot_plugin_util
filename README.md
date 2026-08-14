@@ -56,7 +56,7 @@ AstrBot 当前配置界面没有目录选择器，因此 `audio_directory` 使�
 
 ## 文档解析工具
 
-插件可向大模型暴露 `parse_document(index, path, max_chars)` 工具，把当前消息或引用消息里的文件解析为 Markdown 文本。适合处理用户发送或引用的 PDF、Markdown、文本、CSV、HTML 等文档；运行环境安装 MarkItDown 后，也可扩展解析 Word、Excel、PowerPoint 等格式。
+插件可向大模型暴露 `parse_document(index, path, max_chars)` 工具，把当前消息或引用消息里的文件解析为 Markdown 文本。适合处理用户发送或引用的 PDF、Markdown、文本、CSV、HTML、Word、Excel、PowerPoint 等文档。
 
 默认行为：
 
@@ -71,7 +71,7 @@ AstrBot 当前配置界面没有目录选择器，因此 `audio_directory` 使�
 - `max_file_mb`：允许解析的单个文件大小上限，默认 `30` MB。
 - `allow_local_paths`：是否允许按显式本地路径读取文件，建议保持关闭，只解析当前消息或引用消息中的文件。
 
-实现参考 Microsoft MarkItDown 的“文档转 Markdown”思路：优先使用 MarkItDown；未安装 MarkItDown 时，PDF 使用 `pypdf` 兜底，纯文本/Markdown/CSV/HTML 直接读取。
+实现参考 Microsoft MarkItDown 的“文档转 Markdown”思路：插件通过 `requirements.txt` 声明 `markitdown-no-magika[docx,xls,xlsx]` 和 `pypdf`，AstrBot 安装插件依赖后会优先使用 MarkItDown；未安装 MarkItDown 时，PDF 使用 `pypdf` 兜底，纯文本/Markdown/CSV/HTML 直接读取。
 
 ## AI 主动语音发送工具
 

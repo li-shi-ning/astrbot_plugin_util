@@ -250,7 +250,7 @@ FORWARD_NODES_BATCH_SIZE = 100
 NETEASE_MUSIC_TOOL_NAME = "netease_music"
 
 
-@register("util", "lishinig", "私人插件", "1.6.43")
+@register("util", "lishinig", "私人插件", "1.6.44")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
