@@ -29,6 +29,7 @@ from astrbot.core.platform.message_type import MessageType
 from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
     AiocqhttpMessageEvent,
 )
+from astrbot.core.agent.message import TextPart
 from astrbot.core.star.star import star_map
 from astrbot.core.star.star_handler import EventType, star_handlers_registry
 from astrbot.core.utils.astrbot_path import get_astrbot_plugin_data_path
@@ -54,13 +55,10 @@ try:
     )
     from .core.document_parse import (
         DOCUMENT_PARSE_DISABLED_MESSAGE,
-        DOCUMENT_PARSE_MISSING_FILE_MESSAGE,
-        DOCUMENT_PARSE_PATH_DISABLED_MESSAGE,
         DOCUMENT_PARSE_TOOL_NAME,
+        DocumentParseRegistry,
         build_document_parse_config,
-        collect_document_candidates,
-        format_parsed_document,
-        parse_local_document,
+        format_available_files,
     )
     from .core.keyword_voice import load_group_keyword_voices
     from .core.love_message import (
@@ -149,13 +147,10 @@ except ImportError:
     )
     from core.document_parse import (
         DOCUMENT_PARSE_DISABLED_MESSAGE,
-        DOCUMENT_PARSE_MISSING_FILE_MESSAGE,
-        DOCUMENT_PARSE_PATH_DISABLED_MESSAGE,
         DOCUMENT_PARSE_TOOL_NAME,
+        DocumentParseRegistry,
         build_document_parse_config,
-        collect_document_candidates,
-        format_parsed_document,
-        parse_local_document,
+        format_available_files,
     )
     from core.keyword_voice import load_group_keyword_voices
     from core.love_message import (
@@ -241,6 +236,7 @@ PLUGIN_DATA_DIR = (Path(get_astrbot_plugin_data_path()) / "astrbot_plugin_util")
 NETEASE_LOGIN_DATA_DIR = (PLUGIN_DATA_DIR / "netease_login").resolve()
 NETEASE_COOKIE_PATH = (NETEASE_LOGIN_DATA_DIR / "cookie.json").resolve()
 AI_VOICE_DATA_DIR = (PLUGIN_DATA_DIR / "ai_voice").resolve()
+DOCUMENT_PARSE_CACHE_DIR = (PLUGIN_DATA_DIR / "document_parse").resolve()
 ROLEPLAY_KNOWLEDGE_ROOT = (PLUGIN_ROOT / "cs" / "output").resolve()
 ROLEPLAY_KNOWLEDGE_DB_RELATIVE_PATH = (
     Path("roleplay_knowledge") / ROLEPLAY_KNOWLEDGE_DB_FILENAME
@@ -250,7 +246,7 @@ FORWARD_NODES_BATCH_SIZE = 100
 NETEASE_MUSIC_TOOL_NAME = "netease_music"
 
 
-@register("util", "lishinig", "私人插件", "1.6.45")
+@register("util", "lishinig", "私人插件", "1.6.46")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -558,6 +554,7 @@ class util(Star):
         )
         self.qqmail_tool_config = build_qqmail_tool_config(qq_mail_tool_config)
         self.document_parse_config = build_document_parse_config(document_parse_config)
+        self.document_parse_registry = DocumentParseRegistry(DOCUMENT_PARSE_CACHE_DIR)
         self.offline_webhook_senders = load_offline_webhook_senders(config)
         self.offline_webhook_receiver_server = load_offline_webhook_receiver_server(
             config
@@ -1605,6 +1602,8 @@ class util(Star):
         document_config = getattr(self, "document_parse_config", None)
         if document_config is None or not document_config.enabled:
             self._remove_tool_from_request(req, DOCUMENT_PARSE_TOOL_NAME)
+        else:
+            await self._inject_document_files_for_llm(event, req)
 
         music_config = getattr(self, "music_search_config", None)
         if music_config is None or not music_config.enabled:
@@ -2110,55 +2109,29 @@ class util(Star):
     async def parse_document(
         self,
         event: AstrMessageEvent,
-        index: int = 1,
-        path: str = "",
-        max_chars: int = 0,
+        file_id: str,
+        start_line: int = 1,
+        line_count: int = 120,
     ) -> str:
-        """Parse a document file from the current or quoted message into Markdown text.
+        """Read a converted Markdown document by file_id.
 
         Args:
-            index(number): 1-based file number in the current/quoted message. Use 1 for the first file.
-            path(string): Optional local file path. Usually leave empty; only works when the plugin config allows local paths.
-            max_chars(number): Optional output character limit. Use 0 for the plugin default.
+            file_id(string): Required file id from the available_files block in the current message.
+            start_line(number): 1-based Markdown line number to start reading from.
+            line_count(number): Number of Markdown lines to read. Use a smaller value for dense documents.
         """
         config = getattr(self, "document_parse_config", None)
         if config is None or not config.enabled:
             return DOCUMENT_PARSE_DISABLED_MESSAGE
 
         try:
-            requested_chars = int(max_chars or config.max_output_chars)
-            max_output_chars = max(1000, min(config.max_output_chars, requested_chars))
-            if str(path or "").strip():
-                if not config.allow_local_paths:
-                    return DOCUMENT_PARSE_PATH_DISABLED_MESSAGE
-                candidate_path = Path(str(path).strip()).expanduser().resolve()
-                parsed = parse_local_document(
-                    candidate_path,
-                    max_output_chars=max_output_chars,
-                    max_file_mb=config.max_file_mb,
-                )
-                return format_parsed_document(parsed)
-
-            candidates = await collect_document_candidates(event)
-            if not candidates:
-                return DOCUMENT_PARSE_MISSING_FILE_MESSAGE
-
-            selected_index = max(1, int(index or 1))
-            if selected_index > len(candidates):
-                names = "\n".join(
-                    f"{candidate_index}. {candidate.name}"
-                    for candidate_index, candidate in enumerate(candidates, start=1)
-                )
-                return f"文件编号超出范围。当前可用文件：\n{names}"
-
-            candidate = candidates[selected_index - 1]
-            parsed = parse_local_document(
-                candidate.path,
-                name=candidate.name,
-                max_output_chars=max_output_chars,
-                max_file_mb=config.max_file_mb,
+            return self.document_parse_registry.read_markdown_lines(
+                str(file_id or "").strip(),
+                start_line=int(start_line or 1),
+                line_count=int(line_count or 120),
+                max_output_chars=config.max_output_chars,
+                config=config,
             )
-            return format_parsed_document(parsed)
         except Exception as exc:
             logger.warning("[util] document parse failed: %s", exc)
             return f"文档解析失败：{exc}"
@@ -2574,6 +2547,25 @@ class util(Star):
 
     def _remove_history_read_tool_from_request(self, req: ProviderRequest) -> bool:
         return self._remove_tool_from_request(req, "read_current_history")
+
+    async def _inject_document_files_for_llm(
+        self,
+        event: AstrMessageEvent,
+        req: ProviderRequest,
+    ) -> None:
+        try:
+            entries = await self.document_parse_registry.register_event_files(
+                event,
+                config=self.document_parse_config,
+            )
+        except Exception as exc:
+            logger.warning("[util] failed to register document files: %s", exc)
+            return
+
+        available_files = format_available_files(entries)
+        if not available_files:
+            return
+        req.extra_user_content_parts.append(TextPart(text=available_files).mark_as_temp())
 
     def _request_tool_set_has_tool(self, tool_set, tool_name: str) -> bool:
         if hasattr(tool_set, "names"):

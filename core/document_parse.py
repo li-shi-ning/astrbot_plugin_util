@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -13,6 +15,8 @@ DOCUMENT_PARSE_PATH_DISABLED_MESSAGE = "文档解析工具未允许读取显式�
 DOCUMENT_PARSE_MARKITDOWN_MISSING_MESSAGE = (
     "MarkItDown 未安装，且当前文件类型没有可用兜底解析器。"
 )
+DOCUMENT_PARSE_UNKNOWN_FILE_MESSAGE = "未找到这个 file_id。请使用当前消息中列出的 file_id。"
+DOCUMENT_PARSE_CACHE_TTL_SECONDS = 30 * 60
 
 
 @dataclass(frozen=True)
@@ -20,13 +24,21 @@ class DocumentParseConfig:
     enabled: bool = False
     max_output_chars: int = 12000
     max_file_mb: int = 30
-    allow_local_paths: bool = False
 
 
 @dataclass(frozen=True)
 class DocumentCandidate:
     name: str
     path: Path
+
+
+@dataclass
+class DocumentRegistryEntry:
+    file_id: str
+    name: str
+    source_path: Path
+    markdown_path: Path
+    last_accessed_at: float
 
 
 @dataclass(frozen=True)
@@ -52,8 +64,176 @@ def build_document_parse_config(section_config: dict[str, Any]) -> DocumentParse
             minimum=1,
             maximum=200,
         ),
-        allow_local_paths=bool(section_config.get("allow_local_paths", False)),
     )
+
+
+class DocumentParseRegistry:
+    def __init__(
+        self,
+        cache_dir: Path,
+        *,
+        ttl_seconds: int = DOCUMENT_PARSE_CACHE_TTL_SECONDS,
+    ) -> None:
+        self.cache_dir = cache_dir.resolve()
+        self.ttl_seconds = ttl_seconds
+        self.entries: dict[str, DocumentRegistryEntry] = {}
+
+    async def register_event_files(
+        self,
+        event: Any,
+        *,
+        config: DocumentParseConfig,
+    ) -> list[DocumentRegistryEntry]:
+        self.cleanup_expired()
+        candidates = await collect_document_candidates(event)
+        entries = []
+        for candidate in candidates:
+            entry = self.register_candidate(candidate)
+            self.ensure_markdown(entry, config=config)
+            entries.append(entry)
+        return entries
+
+    def register_candidate(self, candidate: DocumentCandidate) -> DocumentRegistryEntry:
+        file_id = build_document_file_id(candidate)
+        markdown_path = self.cache_dir / f"{file_id}.md"
+        entry = DocumentRegistryEntry(
+            file_id=file_id,
+            name=candidate.name,
+            source_path=candidate.path,
+            markdown_path=markdown_path,
+            last_accessed_at=time.time(),
+        )
+        self.entries[file_id] = entry
+        return entry
+
+    def read_markdown_lines(
+        self,
+        file_id: str,
+        *,
+        start_line: int,
+        line_count: int,
+        max_output_chars: int,
+        config: DocumentParseConfig,
+    ) -> str:
+        self.cleanup_expired()
+        entry = self.entries.get(str(file_id or "").strip())
+        if entry is None:
+            return DOCUMENT_PARSE_UNKNOWN_FILE_MESSAGE
+
+        entry.last_accessed_at = time.time()
+        self.ensure_markdown(entry, config=config)
+        lines = entry.markdown_path.read_text(encoding="utf-8", errors="replace").splitlines()
+        total_lines = len(lines)
+        start_line = max(1, int(start_line or 1))
+        line_count = max(1, min(500, int(line_count or 120)))
+
+        if start_line > total_lines:
+            return (
+                f"文件：{entry.name}\n"
+                f"file_id：{entry.file_id}\n"
+                f"总行数：{total_lines}\n\n"
+                "请求的 start_line 超出文件范围。"
+            )
+
+        end_line = min(total_lines, start_line + line_count - 1)
+        selected = lines[start_line - 1 : end_line]
+        body = "\n".join(
+            f"{line_number}: {line}"
+            for line_number, line in enumerate(selected, start=start_line)
+        )
+        truncated_by_chars = False
+        if len(body) > max_output_chars:
+            body = body[:max_output_chars].rstrip()
+            truncated_by_chars = True
+
+        notes = []
+        if end_line < total_lines:
+            notes.append(f"继续读取请调用 start_line={end_line + 1}。")
+        if truncated_by_chars:
+            notes.append("本次内容因 max_output_chars 被截断，请减少 line_count 后重试。")
+
+        note_text = "\n".join(notes)
+        return "\n".join(
+            part
+            for part in [
+                f"文件：{entry.name}",
+                f"file_id：{entry.file_id}",
+                f"行范围：{start_line}-{end_line}/{total_lines}",
+                "",
+                body or "[未提取到可读文本]",
+                "",
+                note_text,
+            ]
+            if part != ""
+        )
+
+    def ensure_markdown(
+        self,
+        entry: DocumentRegistryEntry,
+        *,
+        config: DocumentParseConfig,
+    ) -> Path:
+        if entry.markdown_path.is_file():
+            markdown_mtime = entry.markdown_path.stat().st_mtime
+            source_mtime = entry.source_path.stat().st_mtime
+            if markdown_mtime >= source_mtime:
+                return entry.markdown_path
+
+        parsed = parse_local_document(
+            entry.source_path,
+            name=entry.name,
+            max_output_chars=10**9,
+            max_file_mb=config.max_file_mb,
+        )
+        entry.markdown_path.parent.mkdir(parents=True, exist_ok=True)
+        entry.markdown_path.write_text(parsed.content, encoding="utf-8")
+        return entry.markdown_path
+
+    def cleanup_expired(self, *, now: float | None = None) -> None:
+        now = now or time.time()
+        expired_ids = [
+            file_id
+            for file_id, entry in self.entries.items()
+            if now - entry.last_accessed_at > self.ttl_seconds
+        ]
+        for file_id in expired_ids:
+            entry = self.entries.pop(file_id, None)
+            if entry is None:
+                continue
+            try:
+                if entry.markdown_path.is_file():
+                    entry.markdown_path.unlink()
+            except OSError:
+                pass
+
+
+def build_document_file_id(candidate: DocumentCandidate) -> str:
+    stat = candidate.path.stat()
+    payload = "|".join(
+        [
+            candidate.name,
+            str(candidate.path),
+            str(stat.st_size),
+            str(stat.st_mtime_ns),
+        ]
+    )
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+    return f"file_{digest}"
+
+
+def format_available_files(entries: list[DocumentRegistryEntry]) -> str:
+    if not entries:
+        return ""
+    lines = [
+        "<available_files>",
+        "The current or quoted message contains readable files. Use parse_document(file_id, start_line, line_count) to read the converted Markdown content.",
+    ]
+    for entry in entries:
+        lines.append(
+            f'- file_id="{entry.file_id}" name="{entry.name}"'
+        )
+    lines.append("</available_files>")
+    return "\n".join(lines)
 
 
 async def collect_document_candidates(event: Any) -> list[DocumentCandidate]:

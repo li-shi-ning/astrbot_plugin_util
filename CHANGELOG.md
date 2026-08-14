@@ -1,3 +1,9 @@
+# v1.6.46
+
+- 重构文档解析工具为 file_id 模式：LLM 请求阶段会扫描当前消息和引用消息中的文件，生成 `<available_files>` 列表并注入模型输入。
+- `parse_document` 参数调整为 `file_id/start_line/line_count`，读取 MarkItDown 转换后的本地 Markdown 缓存文件行范围。
+- 文档 Markdown 缓存写入 AstrBot 插件数据目录，30 分钟未访问会自动删除；移除旧的 `index/path/max_chars` 读取方式和显式本地路径读取配置。
+
 # v1.6.45
 
 - 修复本地安装包打包脚本会把 `dist/` 中旧 zip 一起打入新 zip，导致安装包体积套娃翻倍的问题。

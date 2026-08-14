@@ -101,7 +101,7 @@
   "document_parse": {
     "description": "文档解析工具",
     "type": "object",
-    "hint": "向大模型暴露 parse_document 工具，将当前消息或引用消息里的文件解析为 Markdown 文本。优先使用 MarkItDown，PDF 可用 pypdf 兜底。",
+    "hint": "向大模型暴露 parse_document 工具。插件会为当前消息或引用消息里的文件生成 file_id，并把文件转换为 Markdown 临时文件供大模型按行读取。",
     "items": {
       "enable_document_parse_tool": {
         "description": "是否启用文档解析工具。关闭后不会向大模型暴露 parse_document。",
@@ -120,12 +120,6 @@
         "type": "int",
         "default": 30,
         "hint": "30"
-      },
-      "allow_local_paths": {
-        "description": "是否允许工具按显式本地路径读取文件。建议保持关闭，只解析当前消息或引用消息中的文件。",
-        "type": "bool",
-        "default": false,
-        "hint": "true / false"
       }
     }
   },

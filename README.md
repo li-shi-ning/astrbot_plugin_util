@@ -56,20 +56,21 @@ AstrBot 当前配置界面没有目录选择器，因此 `audio_directory` 使�
 
 ## 文档解析工具
 
-插件可向大模型暴露 `parse_document(index, path, max_chars)` 工具，把当前消息或引用消息里的文件解析为 Markdown 文本。适合处理用户发送或引用的 PDF、Markdown、文本、CSV、HTML、Word、Excel、PowerPoint 等文档。
+插件可向大模型暴露 `parse_document(file_id, start_line, line_count)` 工具，把当前消息或引用消息里的文件转换为 Markdown 后按行读取。适合处理用户发送或引用的 PDF、Markdown、文本、CSV、HTML、Word、Excel、PowerPoint 等文档。
 
 默认行为：
 
-- `index`：当前消息或引用消息里的文件编号，从 `1` 开始；通常填 `1`。
-- `path`：可选本地路径，默认留空。只有配置允许 `allow_local_paths` 时才会读取显式路径。
-- `max_chars`：可选返回长度上限，填 `0` 使用插件配置默认值。
+- 插件会在 LLM 请求阶段扫描当前消息和引用消息里的文件，为每个文件生成 `file_id`。
+- 大模型会在输入中看到 `<available_files>` 文件列表，例如 `file_id="file_xxx"` 和文件名。
+- 文件会先转换为 Markdown 并写入 AstrBot 插件数据目录的临时缓存。
+- 工具按 `file_id`、`start_line`、`line_count` 读取 Markdown 行范围，便于长文档分段阅读。
+- 缓存文件 30 分钟未被访问会自动删除。
 
 在插件配置页的 `document_parse` 中配置：
 
 - `enable_document_parse_tool`：是否启用工具，默认关闭。
 - `max_output_chars`：单次返回给大模型的最大字符数，默认 `12000`。
 - `max_file_mb`：允许解析的单个文件大小上限，默认 `30` MB。
-- `allow_local_paths`：是否允许按显式本地路径读取文件，建议保持关闭，只解析当前消息或引用消息中的文件。
 
 实现参考 Microsoft MarkItDown 的“文档转 Markdown”思路：插件通过 `requirements.txt` 声明 `markitdown-no-magika[docx,xls,xlsx]` 和 `pypdf`，AstrBot 安装插件依赖后会优先使用 MarkItDown；未安装 MarkItDown 时，PDF 使用 `pypdf` 兜底，纯文本/Markdown/CSV/HTML 直接读取。
 
