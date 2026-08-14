@@ -52,6 +52,16 @@ try:
         parse_group_history_components,
         parse_group_history_text,
     )
+    from .core.document_parse import (
+        DOCUMENT_PARSE_DISABLED_MESSAGE,
+        DOCUMENT_PARSE_MISSING_FILE_MESSAGE,
+        DOCUMENT_PARSE_PATH_DISABLED_MESSAGE,
+        DOCUMENT_PARSE_TOOL_NAME,
+        build_document_parse_config,
+        collect_document_candidates,
+        format_parsed_document,
+        parse_local_document,
+    )
     from .core.keyword_voice import load_group_keyword_voices
     from .core.love_message import (
         choose_love_message,
@@ -136,6 +146,16 @@ except ImportError:
         get_qq_nickname,
         parse_group_history_components,
         parse_group_history_text,
+    )
+    from core.document_parse import (
+        DOCUMENT_PARSE_DISABLED_MESSAGE,
+        DOCUMENT_PARSE_MISSING_FILE_MESSAGE,
+        DOCUMENT_PARSE_PATH_DISABLED_MESSAGE,
+        DOCUMENT_PARSE_TOOL_NAME,
+        build_document_parse_config,
+        collect_document_candidates,
+        format_parsed_document,
+        parse_local_document,
     )
     from core.keyword_voice import load_group_keyword_voices
     from core.love_message import (
@@ -230,7 +250,7 @@ FORWARD_NODES_BATCH_SIZE = 100
 NETEASE_MUSIC_TOOL_NAME = "netease_music"
 
 
-@register("util", "lishinig", "私人插件", "1.6.42")
+@register("util", "lishinig", "私人插件", "1.6.43")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -413,6 +433,7 @@ class util(Star):
         offline_email_alert_config = config_section("offline_email_alert")
         qq_mail_tool_config = config_section("qq_mail_tool")
         roleplay_knowledge_config = config_section("roleplay_knowledge")
+        document_parse_config = config_section("document_parse")
 
         self.enable_history_chunking_feature = config_value(
             history_config,
@@ -536,6 +557,7 @@ class util(Star):
             offline_email_alert_config
         )
         self.qqmail_tool_config = build_qqmail_tool_config(qq_mail_tool_config)
+        self.document_parse_config = build_document_parse_config(document_parse_config)
         self.offline_webhook_senders = load_offline_webhook_senders(config)
         self.offline_webhook_receiver_server = load_offline_webhook_receiver_server(
             config
@@ -1580,6 +1602,10 @@ class util(Star):
         ):
             self._remove_tool_from_request(req, QQMAIL_TOOL_NAME)
 
+        document_config = getattr(self, "document_parse_config", None)
+        if document_config is None or not document_config.enabled:
+            self._remove_tool_from_request(req, DOCUMENT_PARSE_TOOL_NAME)
+
         music_config = getattr(self, "music_search_config", None)
         if music_config is None or not music_config.enabled:
             self._remove_tool_from_request(req, NETEASE_MUSIC_TOOL_NAME)
@@ -2079,6 +2105,63 @@ class util(Star):
             "AI 语音已发送。你本轮不要再用普通文本重复这段语音内容；"
             "如果需要补充，只补充极短说明。"
         )
+
+    @filter.llm_tool(name=DOCUMENT_PARSE_TOOL_NAME)
+    async def parse_document(
+        self,
+        event: AstrMessageEvent,
+        index: int = 1,
+        path: str = "",
+        max_chars: int = 0,
+    ) -> str:
+        """Parse a document file from the current or quoted message into Markdown text.
+
+        Args:
+            index(number): 1-based file number in the current/quoted message. Use 1 for the first file.
+            path(string): Optional local file path. Usually leave empty; only works when the plugin config allows local paths.
+            max_chars(number): Optional output character limit. Use 0 for the plugin default.
+        """
+        config = getattr(self, "document_parse_config", None)
+        if config is None or not config.enabled:
+            return DOCUMENT_PARSE_DISABLED_MESSAGE
+
+        try:
+            requested_chars = int(max_chars or config.max_output_chars)
+            max_output_chars = max(1000, min(config.max_output_chars, requested_chars))
+            if str(path or "").strip():
+                if not config.allow_local_paths:
+                    return DOCUMENT_PARSE_PATH_DISABLED_MESSAGE
+                candidate_path = Path(str(path).strip()).expanduser().resolve()
+                parsed = parse_local_document(
+                    candidate_path,
+                    max_output_chars=max_output_chars,
+                    max_file_mb=config.max_file_mb,
+                )
+                return format_parsed_document(parsed)
+
+            candidates = await collect_document_candidates(event)
+            if not candidates:
+                return DOCUMENT_PARSE_MISSING_FILE_MESSAGE
+
+            selected_index = max(1, int(index or 1))
+            if selected_index > len(candidates):
+                names = "\n".join(
+                    f"{candidate_index}. {candidate.name}"
+                    for candidate_index, candidate in enumerate(candidates, start=1)
+                )
+                return f"文件编号超出范围。当前可用文件：\n{names}"
+
+            candidate = candidates[selected_index - 1]
+            parsed = parse_local_document(
+                candidate.path,
+                name=candidate.name,
+                max_output_chars=max_output_chars,
+                max_file_mb=config.max_file_mb,
+            )
+            return format_parsed_document(parsed)
+        except Exception as exc:
+            logger.warning("[util] document parse failed: %s", exc)
+            return f"文档解析失败：{exc}"
 
     @filter.llm_tool(name=NETEASE_MUSIC_TOOL_NAME)
     async def netease_music(

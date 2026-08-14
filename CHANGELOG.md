@@ -1,3 +1,9 @@
+# v1.6.43
+
+- 新增大模型文档解析工具 `parse_document(index, path, max_chars)`，可解析当前消息或引用消息中的文件并返回 Markdown 文本。
+- 文档解析优先使用 MarkItDown，未安装时 PDF 使用 `pypdf` 兜底，文本、Markdown、CSV、HTML 等格式直接读取。
+- 新增 `document_parse` 配置段，可控制工具开关、返回长度、文件大小上限以及是否允许显式本地路径。
+
 # v1.6.42
 
 - 新增大模型网易云音乐聚合工具 `netease_music(action, keyword, index)`，通过 `action=search` 搜索歌曲、`action=select` 按候选编号点歌。

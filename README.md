@@ -54,6 +54,25 @@ AstrBot 当前配置界面没有目录选择器，因此 `audio_directory` 使�
 
 需要使用 VIP 账号访问会员音乐时，发送 `/网易云登录` 并用网易云音乐 App 扫码确认。登录成功后插件会把接口返回的 Cookie 持久化保存到 AstrBot 插件数据目录 `data/plugin_data/astrbot_plugin_util/netease_login/cookie.json`，重启后会自动读取，后续点歌会自动携带该登录态。`music_search.cookie` 仍可手动填写作为备用配置。Cookie 属于账号凭据，请只在可信环境中使用登录指令。
 
+## 文档解析工具
+
+插件可向大模型暴露 `parse_document(index, path, max_chars)` 工具，把当前消息或引用消息里的文件解析为 Markdown 文本。适合处理用户发送或引用的 PDF、Markdown、文本、CSV、HTML 等文档；运行环境安装 MarkItDown 后，也可扩展解析 Word、Excel、PowerPoint 等格式。
+
+默认行为：
+
+- `index`：当前消息或引用消息里的文件编号，从 `1` 开始；通常填 `1`。
+- `path`：可选本地路径，默认留空。只有配置允许 `allow_local_paths` 时才会读取显式路径。
+- `max_chars`：可选返回长度上限，填 `0` 使用插件配置默认值。
+
+在插件配置页的 `document_parse` 中配置：
+
+- `enable_document_parse_tool`：是否启用工具，默认关闭。
+- `max_output_chars`：单次返回给大模型的最大字符数，默认 `12000`。
+- `max_file_mb`：允许解析的单个文件大小上限，默认 `30` MB。
+- `allow_local_paths`：是否允许按显式本地路径读取文件，建议保持关闭，只解析当前消息或引用消息中的文件。
+
+实现参考 Microsoft MarkItDown 的“文档转 Markdown”思路：优先使用 MarkItDown；未安装 MarkItDown 时，PDF 使用 `pypdf` 兜底，纯文本/Markdown/CSV/HTML 直接读取。
+
 ## AI 主动语音发送工具
 
 插件可向大模型暴露 `send_voice_to_user` 工具，让 AI 在需要时把短文本合成为语音并发送到当前会话。该工具参考 `li_qwen3_tts_api` 中的 `cosyvoice_generate.py` 实现，直接调用阿里云百炼 CosyVoice 远程接口；配置里的 `audio_id` 会作为 `input.voice` 传给 TTS 服务，生成结果会下载到 AstrBot 插件数据目录后再作为本地语音发送。

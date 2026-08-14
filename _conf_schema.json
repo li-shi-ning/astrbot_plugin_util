@@ -98,6 +98,37 @@
       }
     }
   },
+  "document_parse": {
+    "description": "文档解析工具",
+    "type": "object",
+    "hint": "向大模型暴露 parse_document 工具，将当前消息或引用消息里的文件解析为 Markdown 文本。优先使用 MarkItDown，PDF 可用 pypdf 兜底。",
+    "items": {
+      "enable_document_parse_tool": {
+        "description": "是否启用文档解析工具。关闭后不会向大模型暴露 parse_document。",
+        "type": "bool",
+        "default": false,
+        "hint": "true / false"
+      },
+      "max_output_chars": {
+        "description": "单次返回给大模型的最大字符数，范围 1000-60000。",
+        "type": "int",
+        "default": 12000,
+        "hint": "12000"
+      },
+      "max_file_mb": {
+        "description": "允许解析的单个文件大小上限，范围 1-200 MB。",
+        "type": "int",
+        "default": 30,
+        "hint": "30"
+      },
+      "allow_local_paths": {
+        "description": "是否允许工具按显式本地路径读取文件。建议保持关闭，只解析当前消息或引用消息中的文件。",
+        "type": "bool",
+        "default": false,
+        "hint": "true / false"
+      }
+    }
+  },
   "ai_voice": {
     "description": "AI 主动语音发送工具",
     "type": "object",
