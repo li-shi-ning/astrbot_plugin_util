@@ -184,6 +184,23 @@ AstrBot 当前配置界面没有目录选择器，因此 `audio_directory` 使�
 
 该工具适合让模型按角色名、别名、关系、语气、背景名词等关键词检索资料，再结合当前对话生成回复。多个关键词会按“任一关键词命中后再按分数排序”返回结果，避免泛词把具体角色资料过滤掉。工具说明中内置 13 名主要角色关键词：樱羽艾玛、二阶堂希罗、紫藤亚里沙、夏目安安、城崎诺亚、莲见蕾雅、佐伯米莉亚、宝生玛格、黑部奈叶香、橘雪莉、远野汉娜、泽渡可可、冰上梅露露。
 
+## 每日首次聊天地区天气注入
+
+每个 QQ 每天第一次在群聊中触发 LLM 时，插件会通过 AIOCQHTTP 的 `get_group_member_info` 接口读取该用户的 `area` 字段，解析出地区（省/市/自治州/地区/盟/县/区/旗等均可），再用高德天气接口获取实时天气与天气预报，追加到本轮 LLM 请求的 `extra_user_content_parts` 动态区。
+
+这样不会修改 `system_prompt` 和历史消息，避免破坏提供商的前缀缓存。注入状态使用 SQLite 数据库持久化在插件数据目录 `data/plugin_data/astrbot_plugin_util/daily_city_weather.sqlite3`，每个 QQ 每天只尝试注入一次。
+
+在插件配置页的 `daily_city_weather` 中配置：
+
+- `enable_daily_city_weather_injection`：是否启用本功能，默认开启。
+- `amap_weather_api_key`：高德开放平台 Web 服务 API Key。
+- `amap_weather_extensions`：高德天气接口 `extensions` 参数，默认 `all`。
+- `include_live_weather`：是否额外并行获取实时天气（`base`），默认开启。
+- `forecast_days`：注入的天气预报天数，默认 `2`。
+- `request_timeout_seconds`：天气接口请求超时秒数，默认 `10`。
+
+地区解析依赖插件目录下 `cs/AMap_adcode_citycode.csv` 中的高德城市编码数据。
+
 ## 群友史
 
 - `/群友史 QQ号 消息内容 | QQ号 消息内容 | ...`：按输入构造合并转发聊天记录。
