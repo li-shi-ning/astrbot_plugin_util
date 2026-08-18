@@ -56,8 +56,8 @@
       "amap_weather_api_key": {
         "description": "高德开放平台 Web 服务 API Key",
         "type": "text",
-        "default": "2fef0ed5946594ee951cda4bdac9770b",
-        "hint": "用于调用高德天气查询接口。参考 https://amap.apifox.cn/api-14675765"
+        "default": "",
+        "hint": "请填写你的高德开放平台 Web 服务 API Key，不要将 Key 写入代码仓库或默认配置。参考 https://amap.apifox.cn/api-14675765"
       },
       "amap_weather_extensions": {
         "description": "高德天气接口 extensions 参数",
