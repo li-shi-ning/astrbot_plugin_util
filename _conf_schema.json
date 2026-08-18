@@ -42,6 +42,49 @@
       }
     }
   },
+  "daily_city_weather": {
+    "description": "每日首次聊天地区天气注入",
+    "type": "object",
+    "hint": "每天每个用户在群聊中第一次触发 LLM 时，通过群成员信息接口读取其地区（省/市/州/地区/盟/县/区/旗等均可），再通过高德天气接口获取天气，并注入到本轮请求的动态区（当前用户消息后）。不会修改 system_prompt 和历史消息，避免破坏前缀缓存。",
+    "items": {
+      "enable_daily_city_weather_injection": {
+        "description": "是否启用每日首次聊天地区天气注入",
+        "type": "bool",
+        "default": true,
+        "hint": "true / false"
+      },
+      "amap_weather_api_key": {
+        "description": "高德开放平台 Web 服务 API Key",
+        "type": "text",
+        "default": "2fef0ed5946594ee951cda4bdac9770b",
+        "hint": "用于调用高德天气查询接口。参考 https://amap.apifox.cn/api-14675765"
+      },
+      "amap_weather_extensions": {
+        "description": "高德天气接口 extensions 参数",
+        "type": "string",
+        "default": "all",
+        "hint": "all=天气预报；base=实时天气。默认 all，并且会额外并行获取一次 base 实时天气。"
+      },
+      "include_live_weather": {
+        "description": "是否同时获取实时天气(base)",
+        "type": "bool",
+        "default": true,
+        "hint": "true / false。关闭后只获取 extensions 配置的天气数据。"
+      },
+      "forecast_days": {
+        "description": "注入的天气预报天数",
+        "type": "int",
+        "default": 2,
+        "hint": "1-4"
+      },
+      "request_timeout_seconds": {
+        "description": "天气接口请求超时秒数",
+        "type": "int",
+        "default": 10,
+        "hint": "1-30"
+      }
+    }
+  },
   "group_history": {
     "description": "群友史",
     "type": "object",
