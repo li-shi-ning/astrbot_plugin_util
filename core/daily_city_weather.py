@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import csv
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -16,6 +15,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlmodel import Field, SQLModel, delete, select
 
 from astrbot import logger
+
+try:
+    from .amap_adcode_data import AMAP_REGIONS
+except ImportError:  # 兼容直接作为普通模块导入的情况
+    from amap_adcode_data import AMAP_REGIONS
 
 AMAP_WEATHER_URL = "https://restapi.amap.com/v3/weather/weatherInfo"
 
@@ -101,14 +105,6 @@ _ETHNIC_MARKERS = (
 _Entry = tuple[str, str, int]
 
 
-def _rank_entry(name: str, adcode: str) -> int:
-    if name in _MUNICIPALITIES or name.endswith(("省", "自治区", "特别行政区")):
-        return 1
-    if adcode.endswith("00"):
-        return 2
-    return 3
-
-
 def _cut_ethnic_suffix(text: str) -> str:
     """从“阿坝藏族羌族自治”这类文本中截取常见简称“阿坝”。"""
     positions = [(text.find(marker), marker) for marker in _ETHNIC_MARKERS]
@@ -162,39 +158,24 @@ def _make_short_aliases(name: str) -> list[str]:
 
 
 class CityCodeIndex:
-    """高德城市编码索引，允许 CSV 中所有有效行政区划条目。"""
+    """高德行政区划索引，数据来自内置 Python 数据模块，不运行时解析 CSV。"""
 
-    def __init__(self, csv_path: str | os.PathLike[str]):
-        self.csv_path = Path(csv_path)
+    def __init__(self):
         self.full_index: dict[str, list[_Entry]] = {}
         self.short_index: dict[str, list[_Entry]] = {}
         self.entry_count = 0
         self._load()
 
     def _load(self) -> None:
-        with self.csv_path.open(encoding="utf-8-sig", newline="") as f:
-            reader = csv.reader(f)
-            rows = list(reader)
-
         full_index: dict[str, list[_Entry]] = {}
         short_index: dict[str, list[_Entry]] = {}
         entry_count = 0
 
-        for row in rows:
-            if len(row) < 2:
+        for name, adcode, rank in AMAP_REGIONS:
+            # 内置数据已排除表头与国家级条目；这里再做一次轻量防御。
+            if not name or not adcode or rank not in (1, 2, 3):
                 continue
-            name = row[0].strip()
-            adcode = row[1].strip()
-            if not name or not adcode or adcode == "\\N":
-                continue
-            # 跳过 CSV 表头（中文名,adcode,citycode）和国家级条目，
-            # 避免表头污染索引，也避免“中国 四川 成都”被截成“中国”。
-            if name == "中文名" or adcode == "adcode":
-                continue
-            if name == "中国":
-                continue
-
-            entry = (name, adcode, _rank_entry(name, adcode))
+            entry = (name, adcode, rank)
             entry_count += 1
             full_index.setdefault(name, []).append(entry)
             for alias in _make_short_aliases(name):
@@ -205,8 +186,7 @@ class CityCodeIndex:
         self.short_index = {key: self._dedupe_entries(value) for key, value in short_index.items()}
         self.entry_count = entry_count
         logger.info(
-            "[util] city code index loaded: csv_path=%s allowed_entries=%d full_names=%d short_aliases=%d",
-            self.csv_path,
+            "[util] city code index loaded: allowed_entries=%d full_names=%d short_aliases=%d",
             entry_count,
             len(self.full_index),
             len(self.short_index),

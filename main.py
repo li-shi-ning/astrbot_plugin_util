@@ -235,7 +235,6 @@ NETEASE_LOGIN_DATA_DIR = (PLUGIN_DATA_DIR / "netease_login").resolve()
 NETEASE_COOKIE_PATH = (NETEASE_LOGIN_DATA_DIR / "cookie.json").resolve()
 AI_VOICE_DATA_DIR = (PLUGIN_DATA_DIR / "ai_voice").resolve()
 ROLEPLAY_KNOWLEDGE_ROOT = (PLUGIN_ROOT / "cs" / "output").resolve()
-AMAP_CITY_CODE_CSV_PATH = (PLUGIN_ROOT / "cs" / "AMap_adcode_citycode.csv").resolve()
 DAILY_CITY_WEATHER_DB_PATH = (PLUGIN_DATA_DIR / "daily_city_weather.sqlite3").resolve()
 ROLEPLAY_KNOWLEDGE_DB_RELATIVE_PATH = (
     Path("roleplay_knowledge") / ROLEPLAY_KNOWLEDGE_DB_FILENAME
@@ -563,7 +562,7 @@ class util(Star):
                 ),
             )
         )
-        self.city_code_index = CityCodeIndex(AMAP_CITY_CODE_CSV_PATH)
+        self.city_code_index = CityCodeIndex()
         try:
             timezone_name = self.context.get_config().get("timezone", "Asia/Shanghai")
             self._daily_weather_timezone = ZoneInfo(str(timezone_name))

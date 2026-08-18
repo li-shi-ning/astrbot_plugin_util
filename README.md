@@ -199,7 +199,7 @@ AstrBot 当前配置界面没有目录选择器，因此 `audio_directory` 使�
 - `forecast_days`：注入的天气预报天数，默认 `2`。
 - `request_timeout_seconds`：天气接口请求超时秒数，默认 `10`。
 
-地区解析依赖插件目录下 `cs/AMap_adcode_citycode.csv` 中的高德城市编码数据。
+地区解析使用插件内置 Python 数据模块 `core/amap_adcode_data.py`（由 `cs/AMap_adcode_citycode.csv` 生成，运行时不解析 CSV）。
 
 ## 群友史
 

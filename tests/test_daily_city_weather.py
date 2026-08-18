@@ -13,12 +13,9 @@ if str(PLUGIN_ROOT) not in sys.path:
 
 from core.daily_city_weather import CityCodeIndex, DailyInjectionState  # noqa: E402
 
-AMAP_CITY_CODE_CSV_PATH = PLUGIN_ROOT / "cs" / "AMap_adcode_citycode.csv"
-
-
 @pytest.fixture(scope="module")
 def city_index():
-    return CityCodeIndex(AMAP_CITY_CODE_CSV_PATH)
+    return CityCodeIndex()
 
 
 @pytest.mark.parametrize(
