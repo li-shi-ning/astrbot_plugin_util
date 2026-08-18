@@ -10,6 +10,7 @@ from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 # ====== 第三方库 ======
 import numpy as np
@@ -21,8 +22,9 @@ from astrbot.api import logger
 # ====== API 模块 ======
 from astrbot.api.event import AstrMessageEvent, MessageChain, filter
 from astrbot.api.provider import ProviderRequest
-from astrbot.api.star import Context, Star, register
+from astrbot.api.star import Context, Star, StarTools, register
 from astrbot.core.config import AstrBotConfig
+from astrbot.core.agent.message import TextPart
 from astrbot.core.platform.astrbot_message import AstrBotMessage, MessageMember
 from astrbot.core.platform.message_session import MessageSession
 from astrbot.core.platform.message_type import MessageType
@@ -31,7 +33,6 @@ from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
 )
 from astrbot.core.star.star import star_map
 from astrbot.core.star.star_handler import EventType, star_handlers_registry
-from astrbot.core.utils.astrbot_path import get_astrbot_plugin_data_path
 
 # ====== 核心库 ======
 try:
@@ -110,6 +111,12 @@ try:
         parse_webhook_payload,
         send_offline_webhook,
         verify_webhook_signature,
+    )
+    from .core.daily_city_weather import (
+        AmapWeatherClient,
+        AmapWeatherConfig,
+        CityCodeIndex,
+        DailyInjectionState,
     )
     from .core.roleplay_knowledge import (
         ROLEPLAY_KNOWLEDGE_TOOL_NAME,
@@ -196,6 +203,12 @@ except ImportError:
         send_offline_webhook,
         verify_webhook_signature,
     )
+    from core.daily_city_weather import (
+        AmapWeatherClient,
+        AmapWeatherConfig,
+        CityCodeIndex,
+        DailyInjectionState,
+    )
     from core.roleplay_knowledge import (
         ROLEPLAY_KNOWLEDGE_TOOL_NAME,
         RoleplayKnowledgeBase,
@@ -217,11 +230,12 @@ SUPPORTED_KEYWORD_VOICE_SUFFIXES = {
 
 PLUGIN_ROOT = Path(__file__).resolve().parent
 LOVE_MESSAGES_PATH = (PLUGIN_ROOT / "core" / "love_messages.txt").resolve()
-PLUGIN_DATA_DIR = (Path(get_astrbot_plugin_data_path()) / "astrbot_plugin_util").resolve()
+PLUGIN_DATA_DIR = StarTools.get_data_dir("astrbot_plugin_util").resolve()
 NETEASE_LOGIN_DATA_DIR = (PLUGIN_DATA_DIR / "netease_login").resolve()
 NETEASE_COOKIE_PATH = (NETEASE_LOGIN_DATA_DIR / "cookie.json").resolve()
 AI_VOICE_DATA_DIR = (PLUGIN_DATA_DIR / "ai_voice").resolve()
 ROLEPLAY_KNOWLEDGE_ROOT = (PLUGIN_ROOT / "cs" / "output").resolve()
+DAILY_CITY_WEATHER_DB_PATH = (PLUGIN_DATA_DIR / "daily_city_weather.sqlite3").resolve()
 ROLEPLAY_KNOWLEDGE_DB_RELATIVE_PATH = (
     Path("roleplay_knowledge") / ROLEPLAY_KNOWLEDGE_DB_FILENAME
 )
@@ -229,7 +243,7 @@ ROLEPLAY_KNOWLEDGE_DB_PATH = ROLEPLAY_KNOWLEDGE_DB_RELATIVE_PATH
 FORWARD_NODES_BATCH_SIZE = 100
 
 
-@register("util", "lishinig", "私人插件", "1.6.41")
+@register("util", "lishinig", "私人插件", "1.6.42")
 class util(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -412,6 +426,7 @@ class util(Star):
         offline_email_alert_config = config_section("offline_email_alert")
         qq_mail_tool_config = config_section("qq_mail_tool")
         roleplay_knowledge_config = config_section("roleplay_knowledge")
+        daily_city_weather_config = config_section("daily_city_weather")
 
         self.enable_history_chunking_feature = config_value(
             history_config,
@@ -501,6 +516,80 @@ class util(Star):
             "enable_group_history_feature",
             True,
         )
+        self.enable_daily_city_weather_injection = config_value(
+            daily_city_weather_config,
+            "enable_daily_city_weather_injection",
+            True,
+        )
+        self.daily_city_weather_client = AmapWeatherClient(
+            AmapWeatherConfig(
+                api_key=config_value(
+                    daily_city_weather_config,
+                    "amap_weather_api_key",
+                    "",
+                )
+                or "",
+                extensions=config_value(
+                    daily_city_weather_config,
+                    "amap_weather_extensions",
+                    "all",
+                )
+                or "all",
+                request_timeout_seconds=max(
+                    1,
+                    int(
+                        config_value(
+                            daily_city_weather_config,
+                            "request_timeout_seconds",
+                            10,
+                        )
+                    ),
+                ),
+                include_live_weather=config_value(
+                    daily_city_weather_config,
+                    "include_live_weather",
+                    True,
+                ),
+                forecast_days=max(
+                    1,
+                    int(
+                        config_value(
+                            daily_city_weather_config,
+                            "forecast_days",
+                            2,
+                        )
+                    ),
+                ),
+            )
+        )
+        self.city_code_index = CityCodeIndex()
+        try:
+            timezone_name = self.context.get_config().get("timezone", "Asia/Shanghai")
+            self._daily_weather_timezone = ZoneInfo(str(timezone_name))
+        except Exception:
+            self._daily_weather_timezone = ZoneInfo("Asia/Shanghai")
+        self._daily_city_weather_state = DailyInjectionState(
+            DAILY_CITY_WEATHER_DB_PATH,
+            self._daily_weather_timezone,
+        )
+        logger.info(
+            "[util] daily city weather config: enabled=%s key_configured=%s "
+            "extensions=%s include_live=%s forecast_days=%s timeout_seconds=%s",
+            self.enable_daily_city_weather_injection,
+            self.daily_city_weather_client.config.ready,
+            self.daily_city_weather_client.config.extensions,
+            self.daily_city_weather_client.config.include_live_weather,
+            self.daily_city_weather_client.config.forecast_days,
+            self.daily_city_weather_client.config.request_timeout_seconds,
+        )
+        if (
+            self.enable_daily_city_weather_injection
+            and not self.daily_city_weather_client.config.ready
+        ):
+            logger.warning(
+                "[util] daily city weather is enabled but amap_weather_api_key is empty; "
+                "injection will be skipped until the key is configured."
+            )
         self.roleplay_knowledge_config = load_roleplay_knowledge_config(
             roleplay_knowledge_config
         )
@@ -586,6 +675,9 @@ class util(Star):
 
     async def terminate(self) -> None:
         await self._stop_offline_webhook_receiver()
+        state = getattr(self, "_daily_city_weather_state", None)
+        if state is not None:
+            await state.close()
 
     async def _start_offline_webhook_receiver(self) -> None:
         settings = self.offline_webhook_receiver_server
@@ -1525,6 +1617,163 @@ class util(Star):
         qq_info = await bot.api.call_action("get_group_member_info", **payloads)
         logger.info(json.dumps(qq_info, indent=2, ensure_ascii=False))
         yield event.plain_result(json.dumps(qq_info))
+
+    @filter.on_llm_request(priority=-6000)
+    async def inject_daily_city_weather(
+        self,
+        event: AstrMessageEvent,
+        req: ProviderRequest,
+    ):
+        """每天每个用户在群聊中第一次触发 LLM 时，把其城市天气注入到动态区。
+
+        动态区即 ProviderRequest.extra_user_content_parts，内容追加在当前用户消息之后，
+        不会修改 system_prompt 和历史消息，避免破坏前缀缓存。
+        """
+        if not getattr(self, "enable_daily_city_weather_injection", False):
+            logger.debug("[util] daily city weather disabled by config, skip")
+            return
+        if not self.daily_city_weather_client.config.ready:
+            logger.debug("[util] daily city weather amap key not ready, skip")
+            return
+        if not isinstance(event, AiocqhttpMessageEvent):
+            logger.debug(
+                "[util] daily city weather non-aiocqhttp event, skip: type=%s",
+                type(event).__name__,
+            )
+            return
+        if event.get_message_type() != MessageType.GROUP_MESSAGE:
+            logger.debug(
+                "[util] daily city weather non-group message, skip: type=%s",
+                event.get_message_type(),
+            )
+            return
+
+        group_id = event.get_group_id()
+        user_id = event.get_sender_id()
+        if not group_id or not user_id:
+            logger.debug(
+                "[util] daily city weather missing group_id/user_id, skip: group=%r user=%r",
+                group_id,
+                user_id,
+            )
+            return
+
+        platform_id = event.get_platform_id() or "aiocqhttp"
+        # 每人每天一次：直接按用户 QQ 号去重，避免同一 QQ 在不同平台/不同群重复注入。
+        state_key = str(user_id)
+        logger.debug(
+            "[util] daily city weather hook start: platform=%s group=%s user_qq=%s",
+            platform_id,
+            group_id,
+            state_key,
+        )
+        state = getattr(self, "_daily_city_weather_state", None)
+        if state is None:
+            logger.warning("[util] daily city weather state is not initialized, skip")
+            return
+        if not await state.try_mark_injected(state_key):
+            logger.debug(
+                "[util] daily city weather already attempted today, skip: user_qq=%s",
+                state_key,
+            )
+            return
+
+        try:
+            logger.info(
+                "[util] daily city weather first attempt today: platform=%s group=%s user_qq=%s",
+                platform_id,
+                group_id,
+                state_key,
+            )
+            member = await self._get_group_member_info_for_weather(
+                event,
+                group_id,
+                user_id,
+            )
+            area = member.get("area", "") if isinstance(member, dict) else ""
+            logger.info(
+                "[util] daily city weather group member area fetched: platform=%s group=%s user_qq=%s area=%r",
+                platform_id,
+                group_id,
+                state_key,
+                area,
+            )
+            city_name, adcode = self.city_code_index.extract_city(area)
+            if not adcode:
+                logger.info(
+                    "[util] daily city weather city resolve skipped: platform=%s group=%s user_qq=%s area=%r",
+                    platform_id,
+                    group_id,
+                    state_key,
+                    area,
+                )
+                return
+
+            logger.info(
+                "[util] daily city weather city resolved: platform=%s group=%s user_qq=%s area=%r city=%s adcode=%s",
+                platform_id,
+                group_id,
+                state_key,
+                area,
+                city_name,
+                adcode,
+            )
+
+            weather_context = await self.daily_city_weather_client.get_weather_context(
+                adcode,
+                city_name,
+            )
+            if not weather_context:
+                logger.warning(
+                    "[util] daily city weather no weather data: platform=%s group=%s user_qq=%s city=%s adcode=%s",
+                    platform_id,
+                    group_id,
+                    state_key,
+                    city_name,
+                    adcode,
+                )
+                return
+
+            req.extra_user_content_parts.append(TextPart(text=weather_context))
+            logger.info(
+                "[util] daily city weather injected into dynamic zone: platform=%s group=%s user_qq=%s city=%s adcode=%s context_chars=%d",
+                platform_id,
+                group_id,
+                state_key,
+                city_name,
+                adcode,
+                len(weather_context),
+            )
+        except Exception as exc:
+            logger.warning(
+                "[util] daily city weather injection failed: platform=%s group=%s user_qq=%s error=%s",
+                platform_id,
+                group_id,
+                state_key,
+                exc,
+                exc_info=True,
+            )
+
+    async def _get_group_member_info_for_weather(
+        self,
+        event: AiocqhttpMessageEvent,
+        group_id: str,
+        user_id: str,
+    ) -> dict:
+        bot = getattr(event, "bot", None)
+        api = getattr(bot, "api", None)
+        call_action = getattr(api, "call_action", None) or getattr(bot, "call_action", None)
+        if not call_action:
+            raise RuntimeError("当前 aiocqhttp 事件没有可用的 call_action")
+        payloads = {
+            "group_id": int(group_id),
+            "user_id": int(user_id),
+            "no_cache": False,
+        }
+        self_id = event.get_self_id()
+        if self_id:
+            payloads["self_id"] = self_id
+        return await call_action("get_group_member_info", **payloads)
 
     @filter.on_llm_request(priority=-5000)
     async def apply_history_tool_config(
